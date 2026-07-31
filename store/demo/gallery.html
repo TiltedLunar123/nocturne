@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Fieldnotes</title>
+<style>
+  /* No dark theme here either, and plenty of imagery, which is where the
+     flip-every-colour approach visibly comes apart. */
+  *{box-sizing:border-box}
+  body{margin:0;background:#fbfaf7;color:#1c1a17;
+       font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  header{display:flex;align-items:center;gap:24px;padding:0 34px;height:62px;
+         background:#ffffff;border-bottom:1px solid #e8e3da}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:720;font-size:17px;letter-spacing:-.02em}
+  .mark{width:26px;height:26px;border-radius:7px;
+        background:linear-gradient(135deg,#f2903f,#d6483b);}
+  nav a{color:#6c6459;text-decoration:none;margin-right:20px;font-size:14px}
+  nav a.on{color:#c8502f;font-weight:620}
+  .sub{margin-left:auto;background:#c8502f;color:#fff;border-radius:7px;padding:7px 15px;
+       font-size:13.5px;font-weight:600}
+  .wrap{max-width:1180px;padding:26px 34px}
+  h1{margin:0 0 6px;font-size:34px;letter-spacing:-.026em}
+  .lede{margin:0 0 22px;color:#6c6459;font-size:16.5px;max-width:640px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  figure{margin:0;background:#fff;border:1px solid #e8e3da;border-radius:12px;overflow:hidden}
+  figure img{display:block;width:100%;height:198px;object-fit:cover}
+  figcaption{padding:12px 14px}
+  figcaption b{display:block;font-size:15px;margin-bottom:3px;letter-spacing:-.01em}
+  figcaption span{color:#7a7266;font-size:13px}
+  .chip{display:inline-block;margin-top:9px;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:640}
+  .c1{background:#fdeee2;color:#b8501f}.c2{background:#e4f0f6;color:#1f6b8e}.c3{background:#e7f3e3;color:#2f6b33}
+</style></head>
+<body>
+<header>
+  <div class="brand"><span class="mark"></span>Fieldnotes</div>
+  <nav><a class="on">Journal</a><a>Places</a><a>Gear</a><a>About</a></nav>
+  <span class="sub">Subscribe</span>
+</header>
+<div class="wrap">
+  <h1>Three evenings, three coastlines</h1>
+  <p class="lede">Notes and photographs from a fortnight spent working out how little kit you actually need.</p>
+  <div class="grid">
+    <figure><img src="img/ridge.jpg" alt="">
+      <figcaption><b>The ridge at golden hour</b><span>Twelve minutes of usable light.</span>
+        <span class="chip c1">Landscape</span></figcaption></figure>
+    <figure><img src="img/harbour.jpg" alt="">
+      <figcaption><b>Harbour, blue hour</b><span>Long exposure, no tripod, mixed results.</span>
+        <span class="chip c2">Coastal</span></figcaption></figure>
+    <figure><img src="img/forest.jpg" alt="">
+      <figcaption><b>Back through the pines</b><span>Flat light is not always the enemy.</span>
+        <span class="chip c3">Woodland</span></figcaption></figure>
+  </div>
+</div>
+</body></html>
