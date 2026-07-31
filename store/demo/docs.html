@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Meridian Docs</title>
+<style>
+  :root{
+    --bg:#ffffff; --surface:#f7f8fa; --raised:#ffffff; --border:#e3e6ea;
+    --ink:#16191d; --muted:#5f6773; --accent:#2f6bd8; --accent-soft:#eaf1fd;
+    --code-bg:#f4f6f8; --note-bg:#fff9e8; --note-border:#f0dca4; --note-ink:#6b5310;
+  }
+  /* The site ships its own dark theme behind a class, the way most sites do. */
+  html.dark{
+    --bg:#0f1216; --surface:#151920; --raised:#1a1f27; --border:#2a313b;
+    --ink:#e6e9ee; --muted:#98a1ae; --accent:#7aa5f5; --accent-soft:#1b2537;
+    --code-bg:#151a21; --note-bg:#241f10; --note-border:#4b3f1c; --note-ink:#e8d59a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  header{display:flex;align-items:center;gap:26px;padding:0 26px;height:58px;
+         border-bottom:1px solid var(--border);background:var(--raised);position:sticky;top:0}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:680;font-size:15.5px;letter-spacing:-.01em}
+  .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);display:grid;place-items:center;
+        color:#fff;font-size:12px;font-weight:800}
+  nav a{color:var(--muted);text-decoration:none;font-size:14px;margin-right:20px}
+  nav a.on{color:var(--ink);font-weight:560}
+  .search{margin-left:auto;background:var(--surface);border:1px solid var(--border);border-radius:7px;
+          padding:6px 12px;color:var(--muted);font-size:13px;width:210px}
+  .wrap{display:grid;grid-template-columns:212px 1fr 176px;gap:34px;padding:28px 26px;max-width:1280px}
+  aside .group{margin-bottom:18px}
+  aside h4{margin:0 0 7px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  aside a{display:block;padding:4px 9px;margin-left:-9px;border-radius:6px;color:var(--muted);
+          text-decoration:none;font-size:13.5px}
+  aside a.on{background:var(--accent-soft);color:var(--accent);font-weight:560}
+  h1{margin:0 0 6px;font-size:31px;letter-spacing:-.022em;line-height:1.2}
+  .lede{margin:0 0 20px;color:var(--muted);font-size:16px}
+  h2{margin:26px 0 8px;font-size:19px;letter-spacing:-.012em}
+  p{margin:0 0 13px}
+  a{color:var(--accent)}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-radius:9px;padding:14px 16px;
+      overflow:auto;font:12.5px/1.6 ui-monospace,"Cascadia Code",Consolas,monospace;margin:0 0 15px}
+  .k{color:#c0399a}.s{color:#2a8a4a}.c{color:var(--muted)}
+  html.dark .k{color:#e884c8}html.dark .s{color:#7fd39a}
+  .note{background:var(--note-bg);border:1px solid var(--note-border);color:var(--note-ink);
+        border-radius:9px;padding:12px 15px;margin:0 0 15px;font-size:14px}
+  table{width:100%;border-collapse:collapse;margin:0 0 15px;font-size:13.5px}
+  th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  tbody tr:nth-child(even){background:var(--surface)}
+  code{background:var(--code-bg);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:12.5px}
+  .toc h4{margin:0 0 7px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .toc a{display:block;color:var(--muted);text-decoration:none;font-size:13px;padding:3px 0}
+  .toc a.on{color:var(--accent)}
+  .btn{display:inline-block;background:var(--accent);color:#fff;border-radius:7px;padding:8px 16px;
+       font-size:14px;font-weight:560;text-decoration:none;margin-top:6px}
+</style></head>
+<body>
+<header>
+  <div class="brand"><span class="logo">M</span>Meridian</div>
+  <nav><a class="on">Docs</a><a>Guides</a><a>API</a><a>Changelog</a></nav>
+  <div class="search">Search the docs</div>
+</header>
+<div class="wrap">
+  <aside>
+    <div class="group"><h4>Getting started</h4>
+      <a>Installation</a><a class="on">Configuration</a><a>Your first query</a></div>
+    <div class="group"><h4>Core concepts</h4>
+      <a>Collections</a><a>Indexes</a><a>Replication</a><a>Consistency</a></div>
+    <div class="group"><h4>Operations</h4>
+      <a>Backups</a><a>Monitoring</a><a>Scaling</a></div>
+  </aside>
+  <main>
+    <h1>Configuration</h1>
+    <p class="lede">Every setting Meridian reads at startup, where it reads it from, and what happens when two sources disagree.</p>
+    <p>Configuration is resolved once, at boot, from three places. Later sources win over earlier ones, so a flag on the command line always beats a value in the config file.</p>
+    <pre><span class="c"># meridian.toml</span>
+[<span class="k">server</span>]
+listen   = <span class="s">"0.0.0.0:7700"</span>
+workers  = 8
+
+[<span class="k">storage</span>]
+path     = <span class="s">"/var/lib/meridian"</span>
+fsync    = <span class="k">true</span></pre>
+    <div class="note"><strong>Note.</strong> Changing <code>storage.path</code> on a running node will not migrate existing data. Stop the node, move the directory, then restart.</div>
+    <h2>Resolution order</h2>
+    <table>
+      <thead><tr><th>Source</th><th>Example</th><th>Precedence</th></tr></thead>
+      <tbody>
+        <tr><td>Config file</td><td><code>meridian.toml</code></td><td>Lowest</td></tr>
+        <tr><td>Environment</td><td><code>MERIDIAN_WORKERS=16</code></td><td>Middle</td></tr>
+        <tr><td>Command line</td><td><code>--workers 16</code></td><td>Highest</td></tr>
+      </tbody>
+    </table>
+    <h2>Reloading</h2>
+    <p>Send <code>SIGHUP</code> to reload the file without dropping connections. Settings marked static in the table above are ignored on reload and need a restart. See <a href="#">the operations guide</a> for the full list.</p>
+    <a class="btn" href="#">Next: your first query</a>
+  </main>
+  <div class="toc">
+    <h4>On this page</h4>
+    <a class="on">Resolution order</a><a>Reloading</a><a>Static settings</a><a>Examples</a>
+  </div>
+</div>
+</body></html>

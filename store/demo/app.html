@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Northwind Analytics</title>
+<style>
+  /* Deliberately no dark theme and no custom properties: hardcoded hex, the way
+     a great many older applications are still built. */
+  *{box-sizing:border-box}
+  body{margin:0;background:#f4f6f8;color:#1d2229;
+       font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+  .top{display:flex;align-items:center;gap:22px;height:56px;padding:0 22px;background:#ffffff;
+       border-bottom:1px solid #dfe3e8}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:680;letter-spacing:-.01em}
+  .mark{width:22px;height:22px;border-radius:5px;background:#0f7b6c;color:#fff;display:grid;
+        place-items:center;font-size:12px;font-weight:800}
+  .top nav a{color:#5a6472;text-decoration:none;margin-right:18px;font-size:13.5px}
+  .top nav a.on{color:#0f7b6c;font-weight:600}
+  .who{margin-left:auto;display:flex;align-items:center;gap:9px;color:#5a6472;font-size:13px}
+  .av{width:26px;height:26px;border-radius:50%;background:#d8dee6}
+  .shell{display:grid;grid-template-columns:196px 1fr;gap:0}
+  .side{background:#ffffff;border-right:1px solid #dfe3e8;padding:16px 12px;min-height:744px}
+  .side h5{margin:12px 8px 6px;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:#8a94a1}
+  .side a{display:block;padding:6px 9px;border-radius:6px;color:#414a56;text-decoration:none;font-size:13.5px}
+  .side a.on{background:#e7f4f1;color:#0f7b6c;font-weight:600}
+  main{padding:20px 24px}
+  .head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px}
+  h1{margin:0;font-size:22px;letter-spacing:-.015em}
+  .sub{color:#6b7482;font-size:13px}
+  .pill{margin-left:auto;background:#0f7b6c;color:#fff;border-radius:7px;padding:7px 14px;font-size:13px;font-weight:560}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+  .card{background:#ffffff;border:1px solid #dfe3e8;border-radius:10px;padding:14px 16px}
+  .card .lab{color:#6b7482;font-size:12px;margin-bottom:5px}
+  .card .val{font-size:23px;font-weight:660;letter-spacing:-.02em}
+  .up{color:#12805f;font-size:12px;font-weight:600}
+  .down{color:#c0392b;font-size:12px;font-weight:600}
+  .panel{background:#ffffff;border:1px solid #dfe3e8;border-radius:10px;padding:16px 18px;margin-bottom:16px}
+  .panel h3{margin:0 0 14px;font-size:14.5px}
+  .bars{display:flex;align-items:flex-end;gap:12px;height:132px}
+  .bars div{flex:1;background:#0f7b6c;border-radius:4px 4px 0 0;position:relative}
+  .bars div:nth-child(even){background:#68b3a6}
+  .axis{display:flex;gap:12px;margin-top:7px;color:#8a94a1;font-size:11px}
+  .axis span{flex:1;text-align:center}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#fafbfc;color:#6b7482;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+     text-align:left;padding:9px 12px;border-bottom:1px solid #dfe3e8}
+  td{padding:9px 12px;border-bottom:1px solid #eceff2}
+  tr:nth-child(even) td{background:#fafbfc}
+  .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11.5px;font-weight:600}
+  .ok{background:#e3f4ef;color:#12805f}
+  .warn{background:#fdf3dc;color:#8a6212}
+  .bad{background:#fbe8e6;color:#c0392b}
+</style></head>
+<body>
+<div class="top">
+  <div class="brand"><span class="mark">N</span>Northwind</div>
+  <nav><a class="on">Overview</a><a>Reports</a><a>Segments</a><a>Alerts</a><a>Settings</a></nav>
+  <div class="who">jhilgendorf<span class="av"></span></div>
+</div>
+<div class="shell">
+  <div class="side">
+    <h5>Workspace</h5>
+    <a class="on">Overview</a><a>Live traffic</a><a>Funnels</a><a>Retention</a>
+    <h5>Data</h5>
+    <a>Sources</a><a>Events</a><a>Exports</a>
+    <h5>Admin</h5>
+    <a>Members</a><a>Billing</a>
+  </div>
+  <main>
+    <div class="head">
+      <h1>Overview</h1><span class="sub">Last 30 days</span>
+      <span class="pill">Export report</span>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="lab">Sessions</div><div class="val">148,209</div><span class="up">+12.4%</span></div>
+      <div class="card"><div class="lab">Conversion</div><div class="val">3.81%</div><span class="up">+0.6pt</span></div>
+      <div class="card"><div class="lab">Avg. duration</div><div class="val">4m 12s</div><span class="down">-8.1%</span></div>
+      <div class="card"><div class="lab">Bounce rate</div><div class="val">41.2%</div><span class="up">-2.3pt</span></div>
+    </div>
+    <div class="panel">
+      <h3>Sessions by week</h3>
+      <div class="bars">
+        <div style="height:44%"></div><div style="height:61%"></div><div style="height:53%"></div>
+        <div style="height:78%"></div><div style="height:69%"></div><div style="height:92%"></div>
+        <div style="height:74%"></div><div style="height:100%"></div>
+      </div>
+      <div class="axis"><span>W1</span><span>W2</span><span>W3</span><span>W4</span><span>W5</span><span>W6</span><span>W7</span><span>W8</span></div>
+    </div>
+    <div class="panel" style="padding:0;overflow:hidden">
+      <table>
+        <thead><tr><th>Source</th><th>Sessions</th><th>Conversion</th><th>Change</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Organic search</td><td>62,410</td><td>4.12%</td><td>+9.2%</td><td><span class="tag ok">Healthy</span></td></tr>
+          <tr><td>Direct</td><td>38,905</td><td>5.03%</td><td>+3.1%</td><td><span class="tag ok">Healthy</span></td></tr>
+          <tr><td>Referral</td><td>21,776</td><td>2.88%</td><td>-1.4%</td><td><span class="tag warn">Watch</span></td></tr>
+          <tr><td>Paid social</td><td>15,332</td><td>1.19%</td><td>-18.7%</td><td><span class="tag bad">Underperforming</span></td></tr>
+          <tr><td>Email</td><td>9,786</td><td>6.44%</td><td>+14.0%</td><td><span class="tag ok">Healthy</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body></html>

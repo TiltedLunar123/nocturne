@@ -12,6 +12,7 @@
     "e2e:settings": "node tools/e2e-settings.mjs",
     "e2e:ui": "node tools/e2e-ui.mjs",
     "icons": "node tools/icons.mjs",
+    "assets": "node tools/store-assets.mjs",
     "probe": "node tools/probe-platform.mjs && node tools/probe-colors.mjs",
     "shots": "node tools/shots.mjs",
     "zip": "node tools/build.mjs --zip --check",
