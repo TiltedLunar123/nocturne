@@ -102,7 +102,7 @@ rather than as a wall of text.
 
 ## Notes to reviewer
 
-Paste into the notes field. Fits AMO's 3000 character limit at 2997. **Source code upload is mandatory for this
+Paste into the notes field. AMO caps this at 3000 characters and counts CRLF line endings, so a plain character count understates it by one per line. This is 2997 as the form counts it.
 add-on**: the build concatenates source files, which counts as a preprocessing
 step under Mozilla's source code submission policy. Upload
 `release/nocturne-source-v1.0.0.zip` alongside the package.
@@ -111,30 +111,27 @@ step under Mozilla's source code submission policy. Upload
 SOURCE AND BUILD
 
 Source is attached, and is also public at github.com/TiltedLunar123/nocturne
+Required because the build concatenates plain source files into two scripts.
+Nothing is minified, transpiled, obfuscated, or bundled.
 
-It is required because the build concatenates plain source files into two
-scripts. Nothing is minified, transpiled, obfuscated, or bundled.
-
-Requirements: Node.js only. There are NO npm dependencies, so no
-package-lock.json and no install step. tools/build.mjs uses only the Node
-standard library, so your default Ubuntu 24.04 / Node 24 environment needs
-nothing added.
+Node.js only. There are NO npm dependencies, so no package-lock.json and no
+install step. build.mjs uses only the Node standard library, so your default
+Ubuntu 24.04 / Node 24 environment needs nothing added.
 
 Step by step:
-
   1. unzip nocturne-source-v1.0.0.zip
   2. cd nocturne
   3. node tools/build.mjs
 
-Step 3 writes dist/firefox/. Those files are the submitted package, byte for
-byte. The build is deterministic: run it twice, get identical output. To produce
-the release archive too, run "node tools/build.mjs --zip --check", which also
-runs the release gate below and exits non-zero on failure.
+Step 3 writes dist/firefox/, which is the submitted package byte for byte. The
+build is deterministic: run it twice, get identical output. For the release
+archive too, run "node tools/build.mjs --zip --check", which also runs the gate
+below and exits non-zero on failure.
 
 What it does: src/lib/*.js and src/content/*.js are classic scripts attaching to
 an NX global. build.mjs concatenates them in a fixed order into content.js and
-background.js, each with a header naming every file it contains. manifest.json
-comes from src/manifest.base.json plus the Gecko keys. Every line in the package
+background.js, each headed by the list of files it contains. manifest.json comes
+from src/manifest.base.json plus the Gecko keys. Every line in the package
 appears verbatim in the source.
 
 NO REMOTE CODE, NO NETWORK
@@ -152,7 +149,7 @@ PERMISSIONS
 
 storage    settings and per-site preferences. Local only, never transmitted.
 alarms     only for the optional "between set times" schedule; the alarm exists
-           only while that schedule is selected (see syncAlarm, background.js).
+           only while that schedule is selected (syncAlarm, background.js).
 scripting  exactly two calls, insertCSS and removeCSS, both origin "USER", and
            only when the user enables "Stubborn sites". executeScript is never
            called.
@@ -170,7 +167,5 @@ cannot be overridden by any author-origin stylesheet; only an important
 user-origin declaration can, and insertCSS with origin "USER" is the only API
 producing one. That is its sole use.
 
-DATA COLLECTION
-
-None. data_collection_permissions is {"required": ["none"]}.
+Data collection: none. data_collection_permissions is {"required": ["none"]}.
 ```
