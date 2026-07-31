@@ -102,7 +102,7 @@ rather than as a wall of text.
 
 ## Notes to reviewer
 
-Paste this into the notes field. **Source code upload is mandatory for this
+Paste into the notes field. Fits AMO's 3000 character limit at 2997. **Source code upload is mandatory for this
 add-on**: the build concatenates source files, which counts as a preprocessing
 step under Mozilla's source code submission policy. Upload
 `release/nocturne-source-v1.0.0.zip` alongside the package.
@@ -110,97 +110,67 @@ step under Mozilla's source code submission policy. Upload
 ```
 SOURCE AND BUILD
 
-The build concatenates plain source files into two scripts. Nothing is minified,
-transpiled, bundled by a third-party bundler, or obfuscated. Source is attached
-and is also public at https://github.com/TiltedLunar123/nocturne
+Source is attached, and is also public at github.com/TiltedLunar123/nocturne
 
-Requirements: Node.js only. There are no npm dependencies at all, so there is no
+It is required because the build concatenates plain source files into two
+scripts. Nothing is minified, transpiled, obfuscated, or bundled.
+
+Requirements: Node.js only. There are NO npm dependencies, so no
 package-lock.json and no install step. tools/build.mjs uses only the Node
-standard library (node:crypto, node:path, node:url, node:util, node:zlib).
+standard library, so your default Ubuntu 24.04 / Node 24 environment needs
+nothing added.
 
-Build (matches your default Ubuntu 24.04 / Node 24 environment):
+Step by step:
 
-    unzip nocturne-source-v1.0.0.zip
-    cd nocturne
-    node tools/build.mjs
+  1. unzip nocturne-source-v1.0.0.zip
+  2. cd nocturne
+  3. node tools/build.mjs
 
-That writes dist/firefox, whose contents are the submitted package. The build is
-deterministic: running it twice produces byte for byte identical output, and the
-zip writer uses a fixed timestamp so archives match too. Verified reproducible on
-Node 24.14. There is no platform-specific code in the build, though it was
-developed on Windows rather than on Linux.
+Step 3 writes dist/firefox/. Those files are the submitted package, byte for
+byte. The build is deterministic: run it twice, get identical output. To produce
+the release archive too, run "node tools/build.mjs --zip --check", which also
+runs the release gate below and exits non-zero on failure.
 
-To reproduce the release archive exactly:
-
-    node tools/build.mjs --zip --check
-
-The --check flag also runs the release gate described below and exits non-zero
-if anything fails.
-
-WHAT THE BUILD DOES
-
-src/lib/*.js and src/content/*.js are classic scripts that attach to an NX
-global. build.mjs concatenates them in a fixed order into content.js and
-background.js, each with a header naming every file included. The manifest is
-generated from src/manifest.base.json with the Firefox-specific keys added. Every
-line in the package appears verbatim in the source.
+What it does: src/lib/*.js and src/content/*.js are classic scripts attaching to
+an NX global. build.mjs concatenates them in a fixed order into content.js and
+background.js, each with a header naming every file it contains. manifest.json
+comes from src/manifest.base.json plus the Gecko keys. Every line in the package
+appears verbatim in the source.
 
 NO REMOTE CODE, NO NETWORK
 
-The add-on makes no network requests in any mode. There is no eval, no
-new Function, no dynamic import, no remote script, and no downloaded
-configuration. The site-convention list it uses is data and ships in the package.
+No network requests in any mode. No eval, no new Function, no dynamic import,
+no remote script, no downloaded config.
 
-This is enforced by the build, not by convention. tools/build.mjs fails and
-refuses to emit a package if fetch, XMLHttpRequest, sendBeacon, WebSocket,
-EventSource, importScripts, eval or new Function appears anywhere in src/. The
-scanner strips comments, string literals, regex literals and template
-interpolations first so a call cannot be hidden inside one. Run
-`node tools/build.mjs --check` to see it pass.
+Enforced by the build, not by convention: build.mjs refuses to emit a package if
+fetch, XMLHttpRequest, sendBeacon, WebSocket, EventSource, importScripts, eval
+or new Function appears anywhere in src/. The scanner strips comments, string
+literals, regex literals and template interpolations first, so a call cannot
+hide inside one.
 
 PERMISSIONS
 
-storage   settings and per-site preferences, kept locally, never transmitted.
+storage    settings and per-site preferences. Local only, never transmitted.
+alarms     only for the optional "between set times" schedule; the alarm exists
+           only while that schedule is selected (see syncAlarm, background.js).
+scripting  exactly two calls, insertCSS and removeCSS, both origin "USER", and
+           only when the user enables "Stubborn sites". executeScript is never
+           called.
 
-alarms    only for the optional "between set times" schedule. The alarm is
-          created only while that schedule is selected and cleared otherwise
-          (see syncAlarm in background.js).
+content_scripts <all_urls>, document_start, all_frames. It is a dark mode
+add-on, so it runs on the pages the user chooses to visit. document_start is
+required because preventing the flash of white before first paint is a core
+feature, and every later injection point runs after that paint. all_frames
+because iframes paint too. It reads colours the page already rendered and writes
+CSS; it does not read or transmit page text, form data, URLs or cookies.
 
-scripting used for exactly two calls, scripting.insertCSS and
-          scripting.removeCSS, both with origin "USER", and only when the user
-          enables the optional "Stubborn sites" setting.
-          scripting.executeScript is never called.
-
-content script on <all_urls> at document_start, all_frames
-          This is a dark mode add-on, so it has to run on the pages the user
-          chooses to visit. document_start is required because preventing the
-          flash of white before first paint is a core feature and every later
-          injection point runs after that paint. all_frames because iframes
-          paint too. It reads colours the page has already rendered and writes
-          CSS. It does not read or transmit page text, form data, URLs or
-          cookies.
-
-optional_host_permissions <all_urls>
-          Optional, not required, and off by default. Requested only when the
-          user turns on "Stubborn sites" in the options page. Some pages set
-          colours in an inline style attribute marked !important; per the CSS
-          cascade no author-origin stylesheet can outrank that, and an important
-          user-origin declaration is the only thing that can. insertCSS with
-          origin "USER" is the only API that produces one. That is the sole use.
+optional_host_permissions <all_urls>. Optional, off by default, requested only
+when the user enables "Stubborn sites". Colours set inline with !important
+cannot be overridden by any author-origin stylesheet; only an important
+user-origin declaration can, and insertCSS with origin "USER" is the only API
+producing one. That is its sole use.
 
 DATA COLLECTION
 
-None. browser_specific_settings.gecko.data_collection_permissions is declared as
-{"required": ["none"]}. strict_min_version is 140.0, which is the floor for that
-key.
-
-TESTING
-
-    node --test test/*.test.mjs    69 unit tests
-    node tools/e2e.mjs             32 checks against a real browser
-    node tools/e2e-settings.mjs    9 checks, mode pinning and the CSS cascade
-    node tools/e2e-ui.mjs          12 checks, popup and options pages
-
-The end-to-end suites drive a Chromium-based browser because they need
---load-extension; they are not required to build or review the package.
+None. data_collection_permissions is {"required": ["none"]}.
 ```
