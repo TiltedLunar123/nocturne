@@ -15,6 +15,13 @@
 
 * { box-sizing: border-box; }
 
+/*
+ * The hidden attribute only sets `display: none` in the user agent sheet, and
+ * any author `display` beats it. The schedule row is `display: grid`, so it
+ * stayed on screen while marked hidden.
+ */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--bg);

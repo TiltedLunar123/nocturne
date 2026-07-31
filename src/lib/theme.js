@@ -32,6 +32,7 @@
       // by measuring: a lower floor reads as near-black, which is harsh for
       // long reading and leaves no room below it for a recessed surface.
       label: 'Nocturne',
+      short: 'Nocturne',
       bg: [0.185, 0.34],
       fg: [0.66, 0.93],
       hue: 250,
@@ -40,6 +41,7 @@
     },
     carbon: {
       label: 'Carbon',
+      short: 'Carbon',
       bg: [0.16, 0.35],
       fg: [0.65, 0.93],
       hue: 0,
@@ -48,6 +50,7 @@
     },
     midnight: {
       label: 'Midnight',
+      short: 'Midnight',
       bg: [0.115, 0.3],
       fg: [0.68, 0.95],
       hue: 255,
@@ -56,6 +59,7 @@
     },
     warm: {
       label: 'Warm',
+      short: 'Warm',
       bg: [0.17, 0.35],
       fg: [0.68, 0.92],
       hue: 65,
@@ -64,6 +68,8 @@
     },
     contrast: {
       label: 'High contrast',
+      // The popup swatch is about 56px wide; the full label truncates there.
+      short: 'Contrast',
       bg: [0.09, 0.28],
       fg: [0.78, 1.0],
       hue: 0,

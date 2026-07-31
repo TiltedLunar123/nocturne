@@ -9,12 +9,13 @@
     "check": "node tools/build.mjs --check",
     "test": "node --test test/*.test.mjs",
     "e2e": "node tools/e2e.mjs",
+    "e2e:settings": "node tools/e2e-settings.mjs",
+    "e2e:ui": "node tools/e2e-ui.mjs",
     "icons": "node tools/icons.mjs",
     "probe": "node tools/probe-platform.mjs && node tools/probe-colors.mjs",
+    "shots": "node tools/shots.mjs",
     "zip": "node tools/build.mjs --zip --check",
-    "all": "node tools/build.mjs --zip --check && node --test test/*.test.mjs && node tools/e2e.mjs && node tools/e2e-settings.mjs",
-    "e2e:settings": "node tools/e2e-settings.mjs",
-    "shots": "node tools/shots.mjs"
+    "all": "node tools/build.mjs --zip --check && node --test test/*.test.mjs && node tools/e2e.mjs && node tools/e2e-settings.mjs && node tools/e2e-ui.mjs"
   },
   "license": "MIT"
 }

@@ -52,7 +52,7 @@
 
       const name = document.createElement('span');
       name.className = 'name';
-      name.textContent = palette.label;
+      name.textContent = palette.short || palette.label;
 
       button.append(chip, name);
       button.addEventListener('click', () => save({ palette: id }));

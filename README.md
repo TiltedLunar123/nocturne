@@ -104,6 +104,7 @@ node tools/build.mjs --check    # build both targets and run the release gate
 node --test test/*.test.mjs     # unit tests
 node tools/e2e.mjs              # drive a real browser against the fixtures
 node tools/e2e-settings.mjs     # mode pinning, and the user-origin cascade claim
+node tools/e2e-ui.mjs           # render the popup and options page, fail on any error
 node tools/shots.mjs            # before and after screenshots into docs/shots
 node tools/probe-platform.mjs   # re-verify the platform facts in PLAN.md
 node tools/probe-colors.mjs
