@@ -96,39 +96,86 @@ Open source, MIT licensed. Source code, technical notes and the full test suite:
 
 ---
 
-## Permission justifications
+## Chrome Web Store submission form
 
-Reviewers ask for these in the submission form. Answer plainly.
+Verbatim answers for each field. Every field is capped at 1000 characters.
 
-**Content script matching all sites, at document_start.** The extension changes the
-colours of the pages the user visits, which requires running on them. It must run
-before the first paint, because preventing the white flash is a core feature and no
-later injection point can do it. It runs in all frames because iframes paint too.
+### Single purpose description
 
-**storage.** Persists the user's settings and per-site preferences locally. Nothing
-is synced or transmitted.
+Nocturne applies a dark colour theme to the web pages the user visits. That is the only thing it does.
 
-**alarms.** Wakes the service worker at the boundary of a user-configured schedule so
-the theme turns on and off at the right time.
+On a site that already ships its own dark theme, Nocturne switches that theme on. On a site that has none, it reads the colours the page has already rendered and generates a dark theme from them, then samples the result to confirm the page came out dark and the text is still readable.
 
-**scripting.** Used only for the optional stubborn-sites feature described below,
-which calls `scripting.insertCSS` with `origin: "USER"`.
+Everything else in the extension serves that one purpose. The palettes and sliders adjust the theme, the schedule decides when it is active, and the per-site controls decide which pages it applies to.
 
-**Optional host permission for all sites.** Not requested at install, and off by
-default. When the user turns on "stubborn sites" in the options page, the extension
-asks for it. Some pages set colours in inline style attributes marked `!important`.
-Per the CSS cascade an important author declaration of that kind cannot be overridden
-by any author-origin stylesheet, only by an important user-origin one, and
-`scripting.insertCSS` with `origin: "USER"` is the only API that produces those. The
-permission is used for that single call. Turning the option off removes the
-permission.
+It does not block content, change how pages behave, collect data, or contact any server.
 
-**Remote code.** None. There is no remote code, no downloaded configuration, and no
-network request of any kind. The build gate at `tools/build.mjs` fails if any
-networking primitive appears in the source.
+### storage justification
 
-**Data collection (AMO).** None. `data_collection_permissions` is declared as
-`{"required": ["none"]}` in the Firefox manifest.
+Stores the user's own settings on their device through chrome.storage.local: whether Nocturne is on, the chosen palette, the brightness, contrast, colour and minimum-contrast values, the schedule, and any per-site overrides the user has set.
+
+It also keeps a small performance cache recording which theming method succeeded for a hostname, so a repeat visit can skip the measuring step rather than deriving it again. That cache holds a hostname and a small integer, and is capped at the 500 most recent entries.
+
+chrome.storage.session holds one short-lived value: the exact CSS text currently inserted into a tab. scripting.removeCSS requires that exact string, and an MV3 service worker is evicted often enough that an in-memory record is not reliable.
+
+None of this leaves the device. The extension makes no network requests at all.
+
+### alarms justification
+
+Used only by the optional "between set times" schedule, where the user picks an hour for the dark theme to switch on and an hour for it to switch off.
+
+An MV3 service worker is evicted when idle, so without an alarm nothing is running at the moment a scheduled boundary is reached and the theme would not change until the user happened to open a page. The alarm wakes the worker to check whether the current time has crossed the boundary, then updates open tabs.
+
+The alarm exists only while that schedule is selected. On the default setting ("Always") and on the "follow my system" setting there is no alarm at all: the extension clears it. See syncAlarm() in background.js.
+
+### scripting justification
+
+Used for exactly two calls, scripting.insertCSS and scripting.removeCSS, both with origin: "USER", and only when the user has switched on the optional "Stubborn sites" setting.
+
+Some pages set colours in an inline style attribute marked !important. Under the CSS cascade an important author declaration of that kind cannot be overridden by any author-origin stylesheet, which is all a content script can inject, so those pages stay light. An important user-origin declaration does outrank it, and scripting.insertCSS with origin "USER" is the only API that produces one.
+
+The setting is off by default, and the host permission is requested at the moment the user enables it. While it is off, no scripting call is ever made.
+
+This permission is not used to execute JavaScript. scripting.executeScript is never called.
+
+### Host permission justification
+
+Two things fall under this, and neither is requested at install time.
+
+1. The content script matches <all_urls> at document_start. Nocturne is a dark mode extension, so it has to run on whichever pages the user chooses to visit; there is no narrower set that would work. document_start is required because preventing the flash of white before a page paints is a core feature, and every later injection point runs after the first paint. all_frames is set because iframes paint too and would otherwise stay white. The script reads colours the page has already rendered and writes CSS. It does not read or transmit page text, form data, URLs or cookies.
+
+2. <all_urls> is declared as an OPTIONAL host permission, not a required one. It is requested only if the user turns on "Stubborn sites", and is used solely for the scripting.insertCSS call described in that justification.
+
+### Remote code
+
+Answer: **No, I am not using Remote code.**
+
+No remote code. There are no <script> tags pointing at external files, no dynamic imports, no eval(), and no new Function(). The extension makes no network requests of any kind, so there is nothing to fetch and nothing to execute.
+
+The list of site theme conventions it recognises is data, and it ships inside the package. There is no downloaded configuration and no update channel.
+
+This is enforced by the build rather than by convention. tools/build.mjs refuses to produce a package if fetch, XMLHttpRequest, sendBeacon, WebSocket, EventSource, importScripts, eval or new Function appears anywhere in the source. The scan strips comments, string literals, regex literals and template interpolations first, so it cannot be fooled by hiding a call inside one. Run "node tools/build.mjs --check" against the published source to verify it yourself.
+
+### Data usage
+
+Tick **nothing**. The Chrome Web Store defines collection as transmitting data off
+the user's device, and Nocturne transmits nothing at all. No network request is made
+in any mode, and the release gate fails the build if a networking primitive appears
+anywhere in the source.
+
+Settings and the per-hostname method cache are written to the browser's own extension
+storage on the device and are never sent anywhere. Both are described in PRIVACY.md.
+
+Certify all three disclosures. All three are true: no user data is sold or transferred
+to third parties, none is used for anything outside the single purpose, and none is
+used for creditworthiness or lending.
+
+### Other fields
+
+- Homepage URL: https://github.com/TiltedLunar123/nocturne
+- Support URL: https://github.com/TiltedLunar123/nocturne/issues
+- Privacy policy URL: https://github.com/TiltedLunar123/nocturne/blob/main/PRIVACY.md
+- Category: Accessibility
 
 ---
 
