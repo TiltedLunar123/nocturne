@@ -33,15 +33,20 @@ Free and open source, MIT licensed.
 Source, technical notes and the test suite:
 https://github.com/TiltedLunar123/nocturne
 
-Chapters:
+Chapters (YouTube needs at least three, each ten seconds or longer, starting at
+0:00; the earlier finer-grained split broke that rule):
+
 0:00 What usually happens
-0:15 Checking first
-0:16 Sites that already have a dark theme
-0:28 Sites that do not
-0:39 Your photos
-0:42 Settings
-0:48 Privacy
-0:56 Where to get it
+0:15 Using the site's own theme
+0:28 Generating one from scratch
+0:39 Photos, settings and privacy
+
+Tags:
+
+dark mode, dark mode extension, chrome extension, firefox addon, dark theme,
+dark reader alternative, browser extension, night mode, dark mode chrome,
+dark mode firefox, open source extension, web accessibility, eye strain,
+manifest v3, privacy extension, no telemetry, css, web development, indie dev
 
 ## Notes
 
