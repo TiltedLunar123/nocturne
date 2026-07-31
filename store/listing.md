@@ -23,81 +23,76 @@ AMO: Appearance
 
 ## Full description
 
-Most dark mode extensions treat every page the same way. They read the site's CSS,
-recolour everything they find, and keep doing it as the page changes. That happens
-even on the many sites that already have a good dark theme of their own, which then
-gets thrown away and replaced with a guess.
+Pasted verbatim into the Chrome Web Store "Detailed description" field.
+Plain text, no markdown: that field does not render it.
+5347 of 16000 characters.
 
-Nocturne checks first.
+Nocturne turns the web dark without wrecking how it looks.
 
-If a site already has a dark mode, Nocturne switches it on. You get the theme the
-site's own designers built, exactly as they built it, and it costs almost nothing to
-apply. If the site has no dark mode, Nocturne builds one, and then checks its own
-work by measuring the page it just produced.
+Most dark mode extensions work one way. They grab every colour on the page and flip it. You get a dark page out of that, along with inverted photos and logos that look like negatives, and the site's own dark theme (if it had one) gets thrown away in the process.
 
-WHAT MAKES IT DIFFERENT
+Nocturne looks for that theme first.
 
-It uses the site's real dark theme. Sites signal dark mode in a handful of standard
-ways, and Nocturne knows them. Turning on the switch a site already has beats
-recolouring it from the outside every time.
+Plenty of sites already support dark mode. They're just waiting for you to dig a toggle out of a settings menu, or for your whole operating system to switch over. Nocturne finds the switch and flips it for you. What you're looking at then isn't a guess at how the site might look dark; it's the dark theme its own designers built, exactly as they built it.
 
-It checks the result. After each attempt Nocturne samples the page as rendered and
-works out how much of your screen is still light and whether the text is still
-readable. If the attempt did not work, it undoes it and tries something else. Nothing
-is assumed.
+When a site really has none, Nocturne builds one. Then it looks at the page it just made and measures whether the thing actually came out dark and readable. If it didn't, that attempt gets thrown away and a different approach gets tried. Nothing is applied on the assumption that it worked.
 
-It reads modern colour. Sites built in the last few years describe their colours in
-formats older extensions cannot parse, and those pages come out broken or half
-themed. Nocturne handles all of them.
+The popup tells you which of those two things happened on the page you're on. So when a site looks especially good (or especially rough) you know why.
 
-Colours keep their identity. The maths happens in a perceptually uniform colour
-space, so a yellow warning stays yellow and a brand blue stays that blue instead of
-turning muddy.
 
-Text stays readable. Every text and background pair is checked against a contrast
-ratio you choose, and adjusted until it passes.
+WHY YOU MIGHT WANT IT
 
-Your photos are safe. Images, video and logos are never inverted. If you want them
-softer there is a dimming slider, and that is all it does.
+No white flash. Open a link at night and the dark page is what arrives, not half a second of blinding white first. The piece of Nocturne that handles this is plain CSS with no script behind it; anything waiting on JavaScript is already too late.
 
-No white flash. The first thing that runs is a stylesheet, applied before the page
-paints.
+Photos stay photos. Images, video and logos are never inverted, and that single decision takes out the complaint people make about dark mode extensions more than any other. Want pictures a little softer at night? There's a dimming slider. Dimming is all it does.
 
-Pages that are already dark are left completely alone.
+Text you can actually read: Nocturne checks every piece of text against whatever is behind it and lightens or darkens it until it clears a contrast ratio you set. Grey text on a grey box doesn't survive that.
 
-CONTROLS
+A yellow warning stays yellow. A brand blue stays that blue instead of going muddy or radioactive. The colour work happens in a space built to match how human eyes actually perceive lightness, which is why it holds up on saturated colours where simpler methods come apart.
 
-Five palettes, from a soft deep blue to a neutral grey to a high contrast option.
-Brightness, contrast and colour sliders. A minimum contrast setting. Per-site
-overrides for everything. Run it always, only when your system is in dark mode, or
-between times you set. Keyboard shortcuts for turning it off on the site you are on
-and everywhere at once.
+It's quick. Six thousand elements on a page: finished in about half a second, using eleven rules to do it. Your fan should stay quiet.
+
+And it knows when to stop. A page that's already dark gets left completely alone, because re-theming something a designer already built for the dark is the fastest way there is to ruin it, and no shortage of extensions do exactly that. If a page turns out to be too expensive to keep themed, Nocturne drops to a cheaper method on its own and remembers that for next time.
+
+
+WHAT YOU CAN CHANGE
+
+Five palettes, running from a soft deep blue through neutral grey to a high contrast option.
+
+Sliders for brightness, contrast and colour intensity. There's also a minimum contrast setting if you want text pushed harder than the default.
+
+Per-site settings for all of it. Change something while you're on a site and it applies to that site alone.
+
+Disagree with what Nocturne picked? Four methods you can pin instead. Automatic is the default and measures the page. Site theme only will use a site's real dark mode and nothing else. Generated always builds a theme. Invert is the blunt option for pages nothing else handles.
+
+Only want it after dark? Run it always, only while your computer is in dark mode, or between hours you pick.
+
+Keyboard shortcuts: one switches it off on the site you're reading, one switches it off everywhere.
+
 
 PRIVACY
 
-Nocturne makes no network requests. None, in any mode. No analytics, no accounts, no
-downloaded configuration, no server anywhere in the picture. The list of site
-conventions it recognises is inside the extension.
+Nocturne makes no network requests. Not in any mode, not ever. There's no analytics and no account. Nothing is downloaded from anywhere, and no server is involved at any point. Everything it needs to do the job ships inside the extension itself, so there's no fix list to fetch and no update channel to phone home to, and your settings stay in your browser.
 
-That is enforced rather than promised: the build refuses to produce a package if any
-networking code is present anywhere in the source, and you can run that check
-yourself. The whole thing is open source, and nothing is minified or obfuscated.
+That part is checked, not just promised. The build refuses to produce a package if any networking code shows up anywhere in the source. Would you rather see for yourself than take that on trust? The whole project is open source, with nothing minified and nothing obfuscated, so you can run that check yourself.
 
 It asks for no site access when you install it.
 
+
 WHAT IT CANNOT DO
 
-Apps that draw to a canvas, like some document editors and map tools, are pixels
-rather than text and colours, so there is nothing for Nocturne to recolour. Use the
-app's own dark theme where it has one.
+Being straight about this seems more useful than the alternative.
 
-Components built with closed shadow DOM are sealed off from every extension, not just
-this one. They stay light.
+Apps that draw to a canvas are pixels, not text and colours: some document editors, most spreadsheets, plenty of map tools. There's nothing in there for Nocturne to recolour. Use those apps' own dark themes where they have them.
 
-Some sites hide part of their styling from extensions entirely. Nocturne notices when
-that leaves a page half themed and switches to a method that works.
+A few sites build their interface in a way that seals it off from every extension, not only this one. Those parts stay light. No extension can reach them.
 
-Source code and full technical notes: https://github.com/TiltedLunar123/nocturne
+Some sites hide part of their styling from extensions entirely, which is the sort of thing that leaves other extensions rendering half a page dark and the other half glaring white; Nocturne notices when that has happened and switches to a method that works instead.
+
+Your browser's own interface, and tabs the browser reloads from memory, can still flash. That's the browser painting; the page has nothing to do with it, and no extension runs early enough to stop it.
+
+
+Open source, MIT licensed. Source code, technical notes and the full test suite: https://github.com/TiltedLunar123/nocturne
 
 ---
 
