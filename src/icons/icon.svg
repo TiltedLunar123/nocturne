@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Nocturne</title>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#252a36"/>
+      <stop offset="1" stop-color="#12141a"/>
+    </linearGradient>
+    <linearGradient id="lit" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c9d3f2"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="6" y="6" width="116" height="116" rx="30" fill="url(#tile)"/>
+  <rect x="6.75" y="6.75" width="114.5" height="114.5" rx="29.25" fill="none"
+        stroke="#4a5474" stroke-width="1.5" opacity="0.55"/>
+
+  <!--
+    The universal theme glyph: one disc, half lit and half unlit. It reads at a
+    glance as "light versus dark" without borrowing the crescent moon that
+    every other extension in this category already uses.
+  -->
+  <circle cx="64" cy="64" r="33" fill="none" stroke="url(#lit)" stroke-width="7"/>
+  <path d="M64 31 A33 33 0 0 0 64 97 Z" fill="url(#lit)"/>
+</svg>

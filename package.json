@@ -1,0 +1,20 @@
+{
+  "name": "nocturne",
+  "version": "1.0.0",
+  "description": "Dark mode for Chrome and Firefox that uses a site's own dark theme when it has one, and generates a perceptually correct one when it does not.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "check": "node tools/build.mjs --check",
+    "test": "node --test test/*.test.mjs",
+    "e2e": "node tools/e2e.mjs",
+    "icons": "node tools/icons.mjs",
+    "probe": "node tools/probe-platform.mjs && node tools/probe-colors.mjs",
+    "zip": "node tools/build.mjs --zip --check",
+    "all": "node tools/build.mjs --zip --check && node --test test/*.test.mjs && node tools/e2e.mjs && node tools/e2e-settings.mjs",
+    "e2e:settings": "node tools/e2e-settings.mjs",
+    "shots": "node tools/shots.mjs"
+  },
+  "license": "MIT"
+}

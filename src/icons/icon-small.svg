@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Nocturne (small sizes)</title>
+  <!--
+    Size-specific artwork, not a downscale. At 16px the full mark's rounded
+    tile eats most of the pixels and the disc collapses into a smudge, so the
+    small variant drops the tile, fills the frame, and thickens the ring so the
+    split still reads at a glance.
+  -->
+  <defs>
+    <linearGradient id="litS" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c4cfef"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="50" fill="#171a21"/>
+  <circle cx="64" cy="64" r="50" fill="none" stroke="url(#litS)" stroke-width="13"/>
+  <path d="M64 14 A50 50 0 0 0 64 114 Z" fill="url(#litS)"/>
+</svg>

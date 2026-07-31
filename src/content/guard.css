@@ -1,0 +1,65 @@
+/*
+ * The anti-flash shell. This is the only part of Nocturne that runs before
+ * first paint, and it is deliberately CSS with no JavaScript behind it: every
+ * scripted path, including scripting.insertCSS from the service worker, is
+ * strictly later than the first paint and therefore cannot prevent a flash.
+ *
+ * Two attributes on <html> control it, and both are set by the engine:
+ *
+ *   data-nocturne-off     the user disabled this site, stand down entirely
+ *   data-nocturne-ready   the real theme has been applied, drop the blunt part
+ *
+ * Neither exists at document_start, which is the point: the aggressive
+ * override is what is in force during the window where the page would
+ * otherwise be white, and it retires as soon as there is something better.
+ */
+
+/*
+ * data-nocturne-probing is the third control, and it exists because of a bug
+ * this file caused. The engine measures the rendered page to decide whether a
+ * tier worked. While these rules are in force the page is dark because of
+ * THEM, so every measurement came back "already dark" and the ladder stopped
+ * at the first rung on every site. The engine now sets this attribute around
+ * each measurement, which stands the shell down so the probe sees the page's
+ * own colours. It is set and cleared inside one synchronous task, so no paint
+ * happens in between and nothing flashes.
+ */
+
+html:not([data-nocturne-off]):not([data-nocturne-probing]) {
+  /*
+   * Worth more than it looks. Besides darkening scrollbars, form controls and
+   * the default canvas, this flips every light-dark() value on the page,
+   * because light-dark() resolves against color-scheme rather than against the
+   * media query. It stays on permanently.
+   */
+  color-scheme: dark !important;
+}
+
+/*
+ * The forced root background retires with the rest of the blunt shell, and it
+ * has to.
+ *
+ * When the root has no background of its own, the browser propagates the
+ * body's background to the whole canvas. Holding a background on the root
+ * permanently defeats that: the body paints its themed colour only as far as
+ * its own box, and everything below the content stays at this placeholder
+ * grey. That seam is what a leftover root background looks like.
+ */
+html:not([data-nocturne-off]):not([data-nocturne-ready]):not([data-nocturne-probing]) {
+  background-color: #16181c !important;
+}
+
+html:not([data-nocturne-off]):not([data-nocturne-ready]):not([data-nocturne-probing]) body {
+  background-color: #16181c !important;
+  color: #d7d9dd !important;
+}
+
+/*
+ * Images are held back for the same window. A photograph appearing at full
+ * brightness against a dark shell before the theme settles reads as a flash in
+ * its own right.
+ */
+html:not([data-nocturne-off]):not([data-nocturne-ready]):not([data-nocturne-probing]) img,
+html:not([data-nocturne-off]):not([data-nocturne-ready]):not([data-nocturne-probing]) video {
+  opacity: 0.92;
+}

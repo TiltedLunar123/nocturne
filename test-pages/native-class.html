@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Class-based dark theme</title>
+<style>
+  :root { --paper:#ffffff; --ink:#111827; --card:#f3f4f6; --edge:#e5e7eb; }
+  /* The Tailwind convention: a class on <html> swaps the whole palette. */
+  html.dark { --paper:#0f1115; --ink:#e5e7eb; --card:#191c22; --edge:#2b2f38; }
+  body { background:var(--paper); color:var(--ink); font:16px/1.6 system-ui; margin:0; padding:24px; }
+  .card { background:var(--card); border:1px solid var(--edge); padding:16px; margin:12px 0; }
+  h1 { margin:0 0 12px }
+</style></head>
+<body>
+  <h1>Class-based dark theme</h1>
+  <p>This page ships its own dark theme behind <code>html.dark</code>.</p>
+  <div class="card">A card, one step lighter than the page.</div>
+  <div class="card">Another card with readable body text inside it.</div>
+</body></html>

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Design tokens, no dark theme</title>
+<style>
+  :root {
+    --color-background:#ffffff; --color-surface:#f7f8fa; --color-text:#1a1d21;
+    --color-text-muted:#5b6472; --color-border:#dfe3e8; --color-primary:#2563eb;
+  }
+  body { background:var(--color-background); color:var(--color-text); font:16px/1.6 system-ui; margin:0; padding:24px; }
+  .surface { background:var(--color-surface); border:1px solid var(--color-border); padding:16px; margin:12px 0; }
+  .muted { color:var(--color-text-muted); }
+  a { color:var(--color-primary); }
+</style></head>
+<body>
+  <h1>Design tokens</h1>
+  <p>Every colour comes from a custom property, and there is no dark theme.</p>
+  <div class="surface">A surface. <span class="muted">Muted text.</span> <a href="#">A link.</a></div>
+  <div class="surface">More content so the sampler has something to measure.</div>
+</body></html>

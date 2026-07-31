@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Nocturne (paused)</title>
+  <!--
+    The paused state. Same silhouette so the toolbar button does not appear to
+    change identity, drained of colour and contrast so the difference is
+    obvious without reading a badge.
+  -->
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#8b8f9a" stroke-width="13" opacity="0.65"/>
+  <path d="M64 14 A50 50 0 0 0 64 114 Z" fill="#8b8f9a" opacity="0.4"/>
+</svg>

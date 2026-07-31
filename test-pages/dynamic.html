@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Content added after load</title>
+<style>
+  body { background:#ffffff; color:#1a1a1a; font:15px/1.6 system-ui; margin:0; padding:24px; }
+  .item { background:#f0f0f0; border:1px solid #d8d8d8; color:#222222; padding:10px; margin:8px 0; }
+  .late { background:#ffffff; color:#000000; border:1px solid #cccccc; padding:10px; margin:8px 0; }
+</style></head>
+<body>
+  <h1>Content added after load</h1>
+  <div class="item">Present at parse time.</div>
+  <div id="host"></div>
+  <script>
+    // Appended well after DOMContentLoaded, the way a single page application
+    // paints its real UI. The observer has to catch these.
+    setTimeout(() => {
+      const host = document.getElementById('host');
+      for (let i = 0; i < 40; i++) {
+        const el = document.createElement('div');
+        el.className = 'late';
+        el.id = 'late-' + i;
+        el.textContent = 'Added after load, item ' + i;
+        host.append(el);
+      }
+      document.documentElement.setAttribute('data-test-added', '1');
+    }, 600);
+  </script>
+</body></html>

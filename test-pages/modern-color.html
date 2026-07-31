@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Modern colour syntax</title>
+<style>
+  /* Everything here is expressed in colour spaces that getComputedStyle
+     returns verbatim rather than converting to rgb(). A parser written for
+     rgb() alone renders this page unreadable. */
+  body { background:oklch(1 0 0); color:oklch(0.22 0.02 260); font:16px/1.6 system-ui; margin:0; padding:24px; }
+  .card { background:oklch(0.97 0.004 260); border:1px solid oklch(0.9 0.01 260); padding:16px; margin:12px 0; }
+  .brand { color:oklch(0.55 0.21 264); }
+  .lab { background:lab(96 0 2); padding:12px; margin:12px 0; color:lab(25 3 -10); }
+  .p3 { background:color(display-p3 0.98 0.98 1); padding:12px; color:color(display-p3 0.15 0.15 0.2); }
+  .mixed { background:color-mix(in oklab, white 88%, blue); padding:12px; margin:12px 0; }
+</style></head>
+<body>
+  <h1 class="brand">Modern colour syntax</h1>
+  <p>Colours in oklch, lab, display-p3 and color-mix.</p>
+  <div class="card">An oklch card with an oklch border.</div>
+  <div class="lab">A CIE lab panel.</div>
+  <div class="p3">A display-p3 panel.</div>
+  <div class="mixed">A color-mix panel, which computes to oklab.</div>
+</body></html>

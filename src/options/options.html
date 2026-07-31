@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Nocturne settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="masthead">
+        <img src="../icons/icon-128.png" width="44" height="44" alt="" />
+        <div>
+          <h1>Nocturne</h1>
+          <p class="sub">Dark mode that uses a site's own theme when it has one.</p>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2>When to run</h2>
+        <div class="rows">
+          <label class="row">
+            <span class="label">Nocturne is</span>
+            <select id="enabled">
+              <option value="true">On</option>
+              <option value="false">Off</option>
+            </select>
+          </label>
+          <label class="row">
+            <span class="label">Turn on</span>
+            <select id="schedule-kind">
+              <option value="always">Always</option>
+              <option value="system">When my system is in dark mode</option>
+              <option value="clock">Between set times</option>
+            </select>
+          </label>
+          <div class="row" id="clock-row" hidden>
+            <span class="label">From</span>
+            <div class="times">
+              <input type="time" id="schedule-from" />
+              <span class="to">to</span>
+              <input type="time" id="schedule-to" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Theme</h2>
+        <div class="palettes" id="palettes" role="radiogroup" aria-label="Theme"></div>
+        <div class="rows">
+          <label class="row">
+            <span class="label">Brightness</span>
+            <span class="control"><input type="range" id="brightness" min="50" max="150" /><output id="brightness-out"></output></span>
+          </label>
+          <label class="row">
+            <span class="label">Contrast</span>
+            <span class="control"><input type="range" id="contrast" min="50" max="150" /><output id="contrast-out"></output></span>
+          </label>
+          <label class="row">
+            <span class="label">Colour</span>
+            <span class="control"><input type="range" id="saturation" min="0" max="200" /><output id="saturation-out"></output></span>
+          </label>
+          <label class="row">
+            <span class="label">
+              Minimum text contrast
+              <small>Text is pushed lighter or darker until it clears this ratio against its own background.</small>
+            </span>
+            <span class="control"><input type="range" id="minContrast" min="3" max="9" step="0.1" /><output id="minContrast-out"></output></span>
+          </label>
+          <label class="row">
+            <span class="label">
+              Dim images
+              <small>Nocturne never inverts photos or logos. This only reduces their brightness.</small>
+            </span>
+            <span class="control"><input type="range" id="dimImages" min="0" max="60" /><output id="dimImages-out"></output></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Preview</h2>
+        <p class="note">A light page, put through the current settings. Everything here is produced by the real transform.</p>
+        <div class="preview" id="preview"></div>
+      </section>
+
+      <section class="card">
+        <h2>Stubborn sites</h2>
+        <p class="note">
+          A few sites set colours directly on elements, marked so that no ordinary
+          stylesheet can override them. Nocturne can win those by injecting its
+          theme at user level instead, which outranks anything a page can write.
+          This needs permission to act on all sites, which is why it is off by
+          default and asks before turning on.
+        </p>
+        <label class="row">
+          <span class="label">Beat page styles that refuse to be overridden</span>
+          <input type="checkbox" id="stubborn" />
+        </label>
+        <p class="note" id="stubborn-note" hidden></p>
+      </section>
+
+      <section class="card">
+        <h2>Per-site settings</h2>
+        <p class="note" id="sites-empty">No sites have their own settings yet. Change anything in the popup while on a site and it will appear here.</p>
+        <ul class="sites" id="sites"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Privacy</h2>
+        <p class="note">
+          Nocturne makes no network requests of any kind, and the build refuses to
+          produce a package if any networking code appears in the source. It has
+          no analytics, no accounts, and no remote configuration. Your settings
+          stay in this browser.
+        </p>
+        <div class="actions">
+          <button type="button" id="export" class="button">Export settings</button>
+          <button type="button" id="reset-all" class="button danger">Reset everything</button>
+        </div>
+      </section>
+
+      <footer class="colophon">
+        <span id="version"></span>
+        <a href="https://github.com/TiltedLunar123/nocturne" target="_blank" rel="noreferrer noopener">Source code</a>
+      </footer>
+    </main>
+
+    <script src="../lib/ui.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

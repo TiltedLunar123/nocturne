@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="dark" />
+    <title>Nocturne</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="head">
+      <div class="brand">
+        <img src="../icons/icon-32.png" width="20" height="20" alt="" />
+        <span>Nocturne</span>
+      </div>
+      <label class="switch" title="Turn Nocturne on or off everywhere">
+        <input type="checkbox" id="global" />
+        <span class="track"><span class="knob"></span></span>
+      </label>
+    </header>
+
+    <section class="site">
+      <div class="site-row">
+        <div class="site-name" id="site-name">this page</div>
+        <label class="switch small" title="Turn Nocturne on or off for this site">
+          <input type="checkbox" id="site" />
+          <span class="track"><span class="knob"></span></span>
+        </label>
+      </div>
+      <!--
+        The status line is not decoration. Knowing that a page is using the
+        site's own dark theme rather than a generated one explains why quality
+        differs between sites, and it is the one thing no other extension in
+        this category tells you.
+      -->
+      <p class="status" id="status">Checking this page</p>
+    </section>
+
+    <section class="block">
+      <h2>Theme</h2>
+      <div class="palettes" id="palettes" role="radiogroup" aria-label="Theme"></div>
+    </section>
+
+    <section class="block">
+      <h2>Adjust</h2>
+      <label class="slider">
+        <span>Brightness</span>
+        <input type="range" id="brightness" min="50" max="150" step="1" />
+        <output id="brightness-out">100</output>
+      </label>
+      <label class="slider">
+        <span>Contrast</span>
+        <input type="range" id="contrast" min="50" max="150" step="1" />
+        <output id="contrast-out">100</output>
+      </label>
+      <label class="slider">
+        <span>Colour</span>
+        <input type="range" id="saturation" min="0" max="200" step="1" />
+        <output id="saturation-out">100</output>
+      </label>
+    </section>
+
+    <section class="block">
+      <h2>How this site is themed</h2>
+      <div class="modes" id="modes" role="radiogroup" aria-label="Method"></div>
+      <p class="hint" id="mode-hint">
+        Automatic picks the best method it can measure. Change it only if a page looks wrong.
+      </p>
+    </section>
+
+    <footer class="foot">
+      <button type="button" id="reset" class="link">Reset this site</button>
+      <button type="button" id="options" class="link">All settings</button>
+    </footer>
+
+    <!-- The same colour, theme and settings code the engine runs. -->
+    <script src="../lib/ui.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
