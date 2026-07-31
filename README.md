@@ -83,7 +83,7 @@ method automatically and that decision is remembered.
 
 ## Install
 
-Not yet on either store. To run it from source:
+Submitted to addons.mozilla.org and awaiting review. To run it from source:
 
 ```bash
 git clone https://github.com/TiltedLunar123/nocturne.git
