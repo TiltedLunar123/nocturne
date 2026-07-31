@@ -9,6 +9,9 @@
  *   promo-small-440x280.png  24-bit, no alpha
  *   promo-marquee-1400x560.png
  *
+ * The promo video, its thumbnail and the YouTube copy live alongside them in
+ * the same folder; those come from tools/promo-video.mjs.
+ *
  * Three browser passes, and the order matters. The extension themes any page it
  * is loaded against, including the composer pages this script uses to lay the
  * final images out, so compositing has to happen in a pass with the extension
