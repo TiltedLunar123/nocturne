@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Slow load</title>
+    <!--
+      A plain light page with nothing the earlier rungs can use, so the ladder
+      settles on the computed sweep, plus one deliberately slow image so that
+      `load` fires several seconds after DOMContentLoaded.
+
+      That gap is the whole point. The engine runs a second, full sweep 250ms
+      after load, and that is the only sweep that reads a document Nocturne has
+      already written to. This page exists so the suite can compare the colours
+      either side of it.
+    -->
+    <style>
+      body {
+        background: #ffffff;
+        color: #333333;
+        font: 16px/1.5 system-ui, sans-serif;
+        margin: 0;
+        padding: 24px;
+      }
+      h1 { color: #111111; }
+      .card {
+        background: #f4f5f7;
+        border: 1px solid #dddddd;
+        padding: 16px;
+        margin: 12px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>A heading on a light page</h1>
+    <p id="para">Body copy that has to stay exactly as readable after the late pass as it was before it.</p>
+    <div class="card" id="card">A raised card, which has to stay lighter than the page behind it.</div>
+    <img src="slow.gif" alt="" width="1" height="1" />
+  </body>
+</html>

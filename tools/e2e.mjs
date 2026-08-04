@@ -173,6 +173,20 @@ const CASES = [
 function serve(dir) {
   return http.createServer(async (req, res) => {
     const name = path.basename(new URL(req.url, 'http://x').pathname) || 'index.html';
+    /*
+     * A deliberately slow subresource, so `load` stays pending long enough to
+     * sample the page before and after the engine's post-load re-sweep. The
+     * re-sweep is the only path that reads a page Nocturne has already
+     * written to, and it is therefore the only path that can read its own
+     * output back.
+     */
+    if (name === 'slow.gif') {
+      setTimeout(() => {
+        res.writeHead(200, { 'content-type': 'image/gif' });
+        res.end(Buffer.from('R0lGODlhAQABAAAAACw=', 'base64'));
+      }, 4000);
+      return;
+    }
     try {
       const body = await fs.readFile(path.join(dir, name));
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -303,6 +317,73 @@ async function run() {
         record(late.bg !== 'rgb(255, 255, 255)', 'late content: background was themed', late.bg);
         record(late.text !== 'rgb(0, 0, 0)', 'late content: text was themed', late.text);
       }
+      await cdp.send('Target.closeTarget', { targetId });
+    }
+
+    // --- the post-load re-sweep must not read back our own output --------
+    {
+      const { targetId, sessionId } = await openPage(cdp);
+      await cdp.send('Page.navigate', { url: `http://localhost:${port}/slow-load.html` }, sessionId);
+
+      const SAMPLE = `({
+        tier: document.documentElement.getAttribute('data-nocturne-tier'),
+        ready: document.readyState,
+        page: getComputedStyle(document.body).backgroundColor,
+        card: getComputedStyle(document.getElementById('card')).backgroundColor,
+        text: getComputedStyle(document.getElementById('para')).color
+      })`;
+
+      const before = await waitFor(
+        'slow page to settle on compute',
+        async () => {
+          const value = await cdp.evaluate(sessionId, SAMPLE);
+          return value && value.tier === String(TIER.COMPUTE) ? value : null;
+        },
+        { timeout: 15000, interval: 100 }
+      );
+
+      // Let load fire and the engine's own 250ms late pass run to completion.
+      await waitFor(
+        'slow page to finish loading',
+        async () => (await cdp.evaluate(sessionId, SAMPLE)).ready === 'complete',
+        { timeout: 20000, interval: 150 }
+      );
+      await new Promise((r) => setTimeout(r, 900));
+      const after = await cdp.evaluate(sessionId, SAMPLE);
+
+      /*
+       * Every rule Nocturne writes for the compute tier is live while this
+       * second sweep runs, so getComputedStyle hands back Nocturne's own
+       * colours unless the sheet is stood down for the read. Mapping those a
+       * second time walks every surface towards mid grey and collapses the
+       * card into the page behind it.
+       */
+      record(
+        before.page === after.page,
+        're-sweep: page background is unchanged by the late pass',
+        `${before.page} -> ${after.page}`
+      );
+      record(
+        before.text === after.text,
+        're-sweep: body text is unchanged by the late pass',
+        `${before.text} -> ${after.text}`
+      );
+      record(
+        before.card === after.card,
+        're-sweep: the card is unchanged by the late pass',
+        `${before.card} -> ${after.card}`
+      );
+      // "Different string" is not good enough here: the collapsed case landed
+      // one part in 255 apart, which no eye can see. Ask for a real gap.
+      const channels = (value) => (String(value).match(/\d+/g) || []).map(Number);
+      const gap = Math.max(
+        ...channels(after.card).map((c, i) => Math.abs(c - (channels(after.page)[i] ?? 0)))
+      );
+      record(
+        gap >= 3,
+        're-sweep: the card is still visibly raised above the page',
+        `card ${after.card} vs page ${after.page}, widest channel gap ${gap}`
+      );
       await cdp.send('Target.closeTarget', { targetId });
     }
 

@@ -62,6 +62,38 @@
     node.nodeType === 1 &&
     (node.hasAttribute?.(MARK) || node.closest?.(`[${MARK}]`) != null);
 
+  /**
+   * Take some of our own sheets out of the cascade for the duration of a read.
+   *
+   * The compute tier decides what a colour should become by asking
+   * getComputedStyle what it currently is. On the first sweep that answer is
+   * the page's own design. On any later sweep it is whatever Nocturne wrote
+   * last time, unless the sheet holding those rules is stood down first, and
+   * mapping an already-mapped colour walks every surface back towards the
+   * middle of the ramp until cards and the page behind them meet.
+   *
+   * Media rather than removal: removing the element would drop and rebuild
+   * the whole sheet on every read. Flipping media is one attribute write,
+   * reversed inside the same synchronous task, so style recalc sees it and
+   * nothing ever repaints in between. That is the same trick, and the same
+   * reasoning, as the probing attribute on guard.css.
+   */
+  function withoutOurs(ids, fn) {
+    const suspended = [];
+    for (const id of ids) {
+      const el = elements.get(id);
+      if (el && el.media !== 'not all') {
+        el.media = 'not all';
+        suspended.push(el);
+      }
+    }
+    try {
+      return fn();
+    } finally {
+      for (const el of suspended) el.media = 'screen';
+    }
+  }
+
   /** Re-append any sheet a page has ripped out of the head. */
   function reassert() {
     const parent = container();
@@ -110,5 +142,16 @@
     if (el && el.parentNode) el.parentNode.removeChild(el);
   }
 
-  NX.sheet = { MARK, set, remove, clearAll, isOurs, reassert, adopt, unadopt, elements };
+  NX.sheet = {
+    MARK,
+    set,
+    remove,
+    clearAll,
+    isOurs,
+    reassert,
+    adopt,
+    unadopt,
+    withoutOurs,
+    elements,
+  };
 })(typeof self !== 'undefined' ? self : globalThis);
