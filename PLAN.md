@@ -278,10 +278,23 @@ and the wrong one looked fine until something measured it.
 - **Surfaces send patches, not snapshots.** The popup and the options page can both be
   open, each holding settings read when it loaded, and a surface that sends its whole
   snapshot back reverts whatever the other one changed meanwhile.
-- **A pinned mode outranks the learned tier.** The learned rung is an optimisation for
-  `auto`. Applying it first meant "Site theme only" started the climb above the early
-  return that makes the mode mean anything, and recoloured pages it promises never to
-  touch.
+- **A pinned mode outranks the learned tier, but a demotion is not a preference.** The
+  learned rung is an optimisation for `auto`. Applying it first meant "Site theme only"
+  started the climb above the early return that makes the mode mean anything, and
+  recoloured pages it promises never to touch. Throwing the learned rung away entirely
+  under every pinned mode then cost the filter demotion under `dynamic`, so a page that
+  had already melted paid for the whole sweep again on every load. `dynamic` keeps the
+  demotion and nothing else.
+- **Standing down withdraws the USER-origin sheet.** `sheet.clearAll` only reaches the
+  sheets this document owns. The stubborn-sites copy lives at USER origin and outranks
+  everything the page can write, so leaving it behind kept the page inverted for the
+  life of the document while the engine reported itself off.
+- **Losing the theme fight escalates, unless escalating is the thing the mode forbids.**
+  Handing control back to the ladder is right for `auto` and wrong for "Site theme
+  only", whose every higher rung is the recolouring it refuses. Re-entering the native
+  rung instead re-applies the class the site has already stripped and starts the fight
+  over, with a fresh re-apply budget each time: an unbounded loop, not a capped one.
+  The mode now stops at the page as the site renders it.
 
 ## Known limits, stated rather than hidden
 

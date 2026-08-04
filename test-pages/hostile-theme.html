@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hostile theme script</title>
+    <!--
+      A site that insists on its own light theme.
+
+      It advertises a dark variant through `html.dark`, so the class signal is
+      detected and applying it genuinely darkens the page, and then its own
+      script strips the class straight back off again. That is the fight
+      watchRoot caps, and this page exists so the suite can see what happens
+      once the cap is reached.
+    -->
+    <style>
+      html { background: #ffffff; }
+      body {
+        background: #ffffff;
+        color: #333333;
+        font: 16px/1.5 system-ui, sans-serif;
+        margin: 0;
+        padding: 24px;
+      }
+      h1 { color: #111111; }
+      .card { background: #f4f5f7; border: 1px solid #dddddd; padding: 16px; }
+
+      html.dark { background: #0d1117; }
+      html.dark body { background: #0d1117; color: #e6edf3; }
+      html.dark h1 { color: #f0f6fc; }
+      html.dark .card { background: #161b22; border-color: #30363d; }
+    </style>
+  </head>
+  <body>
+    <h1>This site wants to stay light</h1>
+    <p>Body copy on a page whose own script keeps putting the theme back.</p>
+    <div class="card">A card.</div>
+    <script>
+      // Strip the class again whenever anything adds it, and count the fight
+      // so the suite can tell the page really did resist.
+      var fights = 0;
+      new MutationObserver(function () {
+        if (document.documentElement.classList.contains('dark')) {
+          fights++;
+          document.documentElement.classList.remove('dark');
+          document.documentElement.setAttribute('data-fights', String(fights));
+        }
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    </script>
+  </body>
+</html>

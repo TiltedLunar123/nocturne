@@ -23,6 +23,12 @@ Bug fixes throughout, several of them to things that never worked in 1.0.0.
   strand a stylesheet that neither can then remove.
 - A site's own theme script switching Nocturne back off is now noticed for
   every convention Nocturne knows, not five of the ten.
+- Turning Nocturne off on a site with the stubborn-sites option enabled now
+  really turns it off. The strongest of its stylesheets was left behind, so
+  the page stayed inverted, and nothing on the page could override it.
+- A site that keeps putting its own light theme back no longer drags "Site
+  theme only" into recolouring the page, and no longer ends in a fight
+  neither side stops.
 - The scheduling time fields are labelled for screen readers.
 
 ## 1.0.0

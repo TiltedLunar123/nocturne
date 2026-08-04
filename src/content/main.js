@@ -56,6 +56,17 @@
     NX.observe.stop();
     NX.tiers.clearCompute();
     NX.sheet.clearAll();
+    /*
+     * The USER-origin mirror is not ours to leave behind.
+     *
+     * clearAll only reaches the sheets this document owns. The stubborn-sites
+     * copy lives at USER origin, inserted by the worker, and it outranks every
+     * rule the page itself can write. Left in place it keeps the page inverted
+     * or token-remapped for the life of the document, unoverridable, while
+     * Nocturne reports itself switched off. Only the top frame ever asked for
+     * it, so only the top frame withdraws it.
+     */
+    if (isTopFrame()) NX.browser.send({ type: MSG.CLEAR_USER_CSS });
     state.tier = TIER.OFF;
     state.ready = false;
   }
@@ -90,15 +101,27 @@
     }
 
     /*
-     * The learned tier is an optimisation for `auto`, and only for `auto`.
+     * The learned rung is an optimisation, and how much of it applies depends
+     * on the mode.
      *
-     * Letting it set the starting rung under a pinned mode broke the pin: an
-     * origin that had learned rung 3 while on `auto` skipped straight past the
-     * "site theme only" early return further down, because that return lives
-     * inside the block this value gates. The popup promises that mode never
-     * recolours, and it recoloured.
+     * For `auto` it applies whole: start where this origin settled last time.
+     *
+     * For `dynamic` only the demotion to filter carries over. That demotion is
+     * a performance backstop rather than a preference, and running the sweep
+     * again on a page that already melted under it is the exact cost it exists
+     * to avoid. The cheaper rungs are skipped anyway under this mode.
+     *
+     * For `native` none of it applies. Letting it set the starting rung meant
+     * an origin that had learned rung 3 on `auto` skipped past the early
+     * return further down that makes the mode mean anything, because that
+     * return sits inside the block this value gates. The popup promises the
+     * mode never recolours, and it recoloured.
      */
-    const startAt = pinned === 'auto' && from != null ? Math.max(1, from) : 1;
+    let startAt = 1;
+    if (from != null) {
+      if (pinned === 'auto') startAt = Math.max(1, from);
+      else if (pinned === 'dynamic' && from >= TIER.FILTER) startAt = TIER.FILTER;
+    }
 
     if (pinned !== 'dynamic' && startAt <= TIER.NATIVE) {
       const byClass = NX.tiers.tryNativeClass(ctx);
@@ -242,6 +265,23 @@
       state.undoSignal();
       state.undoSignal = null;
     }
+
+    /*
+     * "Site theme only" has nothing left to try.
+     *
+     * Its one rung just lost to the site's own script, and everything above it
+     * is the recolouring this mode exists to refuse. Climbing anyway would
+     * break the promise; re-entering the native rung would re-apply the signal
+     * the site has already stripped five times and start the fight over. The
+     * honest outcome is the page as the site renders it.
+     */
+    if (ctx.mode === 'native') {
+      state.tier = TIER.NATIVE;
+      root().setAttribute('data-nocturne-tier', String(TIER.NATIVE));
+      syncUserCss(ctx, { untouched: true });
+      return;
+    }
+
     const outcome = NX.observe.run(() => climb(ctx, TIER.TOKENS));
     state.tier = outcome.tier;
     root().setAttribute('data-nocturne-tier', String(outcome.tier));
