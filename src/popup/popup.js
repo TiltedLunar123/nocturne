@@ -123,7 +123,9 @@
       return;
     }
 
-    const report = state.tabId ? await NX.browser.sendToTab(state.tabId, { type: MSG.GET_STATE }) : null;
+    const report = state.tabId
+      ? await NX.browser.sendToFrame(state.tabId, 0, { type: MSG.GET_STATE })
+      : null;
     if (!report || report.tier == null) {
       status.dataset.quality = 'off';
       status.textContent = 'Reload the page to theme it';
@@ -135,9 +137,12 @@
   }
 
   async function save(patch) {
-    const next = { ...state.settings, ...patch };
-    const reply = await NX.browser.send({ type: MSG.SET_SETTINGS, settings: next });
-    state.settings = reply ? reply.settings : NX.settings.sanitise(next);
+    // Send the change, not this popup's whole snapshot of the settings, which
+    // may be older than what the options page has since written.
+    const reply = await NX.browser.send({ type: MSG.PATCH_SETTINGS, patch });
+    state.settings = reply && reply.settings
+      ? reply.settings
+      : NX.settings.sanitise({ ...state.settings, ...patch });
     render();
   }
 
@@ -151,7 +156,9 @@
   function wire() {
     el('global').addEventListener('change', (event) => save({ enabled: event.target.checked }));
     el('site').addEventListener('change', (event) =>
-      saveSite({ enabled: event.target.checked ? undefined : false })
+      // NX.settings.CLEAR, not undefined: messaging serialises the patch and
+      // an undefined value is dropped rather than sent.
+      saveSite({ enabled: event.target.checked ? NX.settings.CLEAR : false })
     );
 
     for (const key of ['brightness', 'contrast', 'saturation']) {
@@ -180,7 +187,24 @@
   async function init() {
     const [tab] = await api.tabs.query({ active: true, currentWindow: true });
     state.tabId = tab ? tab.id : null;
-    state.origin = tab ? NX.settings.originOf(tab.url) : null;
+
+    /*
+     * Ask the page which site it is, do not parse it out of the tab.
+     *
+     * Nocturne requests no `tabs` permission and no default host permission,
+     * so Chrome hands back Tab objects with no `url` key whatsoever. Reading
+     * it produced null on every single page, which disabled the site toggle,
+     * blanked the site name, and left this popup permanently claiming it
+     * could not run here. `tab.url` is still consulted as a fallback, because
+     * it does become readable once someone grants the optional all-sites
+     * permission for stubborn mode.
+     */
+    const report = state.tabId
+      ? await NX.browser.sendToFrame(state.tabId, 0, { type: MSG.GET_STATE })
+      : null;
+    state.origin =
+      (report && report.origin) || (tab ? NX.settings.originOf(tab.url) : null);
+
     state.settings = await NX.browser.readSettings();
     wire();
     render();

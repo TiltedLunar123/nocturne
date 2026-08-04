@@ -89,7 +89,16 @@
       return { tier: TIER.NATIVE, log: ['already-dark'], untouched: true };
     }
 
-    const startAt = from == null ? 1 : Math.max(1, from);
+    /*
+     * The learned tier is an optimisation for `auto`, and only for `auto`.
+     *
+     * Letting it set the starting rung under a pinned mode broke the pin: an
+     * origin that had learned rung 3 while on `auto` skipped straight past the
+     * "site theme only" early return further down, because that return lives
+     * inside the block this value gates. The popup promises that mode never
+     * recolours, and it recoloured.
+     */
+    const startAt = pinned === 'auto' && from != null ? Math.max(1, from) : 1;
 
     if (pinned !== 'dynamic' && startAt <= TIER.NATIVE) {
       const byClass = NX.tiers.tryNativeClass(ctx);
@@ -200,6 +209,13 @@
    * would end up both remapped and inverted at once.
    */
   function syncUserCss(ctx, outcome) {
+    /*
+     * Only the document does this. `scripting.insertCSS` with a tabId targets
+     * the top frame, so an embed running this would be writing its own
+     * computed rules, and its own `[data-nx]` ids, over the page that embeds
+     * it. Stubborn mode never reached subframes anyway, so nothing is lost.
+     */
+    if (!isTopFrame()) return;
     if (!ctx.stubborn || (outcome && outcome.untouched)) {
       NX.browser.send({ type: MSG.CLEAR_USER_CSS });
       return;
@@ -259,6 +275,38 @@
     NX.browser.send({ type: MSG.LEARNED, origin: state.origin, tier, reason: reason || '' });
   }
 
+  /**
+   * Is this the frame entitled to speak for the tab?
+   *
+   * The script runs in every frame, and only the document itself has the
+   * origin the toolbar and the popup mean. Comparing the WindowProxy is
+   * allowed across origins; reading anything off it is not, hence the guard.
+   */
+  function isTopFrame() {
+    try {
+      return global.top === global.self;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Tell the worker where this page is and whether it ended up themed.
+   *
+   * The worker cannot work either out for itself: with no `tabs` permission
+   * and no default host permission it gets Tab objects with no `url`, and a
+   * service worker has no media query so it cannot evaluate a system
+   * schedule. Reporting is the only honest source for both.
+   */
+  function announce(ctx) {
+    if (!isTopFrame()) return;
+    NX.browser.send({
+      type: MSG.TAB_STATE,
+      origin: state.origin,
+      active: !!(ctx && ctx.active),
+    });
+  }
+
   async function apply() {
     const settings = await NX.browser.readSettings();
     const origin = NX.settings.originOf(location.href);
@@ -268,6 +316,7 @@
       typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
     const ctx = NX.settings.resolve(settings, origin, { systemDark });
     state.settings = ctx;
+    announce(ctx);
 
     if (!ctx.active) {
       standDown();
@@ -363,6 +412,9 @@
   function boot() {
     if (state.started) return;
     state.started = true;
+    // Known from document_start, so a popup opened before the ladder has run
+    // still learns which site it is looking at.
+    state.origin = NX.settings.originOf(location.href);
     listen();
 
     /*

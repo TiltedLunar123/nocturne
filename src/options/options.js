@@ -186,9 +186,12 @@
   }
 
   async function save(patch) {
-    const next = { ...settings, ...patch };
-    const reply = await NX.browser.send({ type: MSG.SET_SETTINGS, settings: next });
-    settings = reply && reply.settings ? reply.settings : NX.settings.sanitise(next);
+    // Send the change, not this page's whole snapshot. This page can sit open
+    // for a long time while the popup writes settings underneath it.
+    const reply = await NX.browser.send({ type: MSG.PATCH_SETTINGS, patch });
+    settings = reply && reply.settings
+      ? reply.settings
+      : NX.settings.sanitise({ ...settings, ...patch });
     render();
   }
 
