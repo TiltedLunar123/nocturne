@@ -17,7 +17,15 @@
   /** Message names. Kept in one table so a typo is a missing key, not silence. */
   const MSG = {
     GET_STATE: 'get-state',
-    SET_SETTINGS: 'set-settings',
+    /**
+     * A partial update, merged over storage by the worker.
+     *
+     * Deliberately not "here is the whole settings object". The popup and the
+     * options page can both be open, each holding a snapshot taken when it
+     * loaded, and a surface that sends its whole snapshot back silently
+     * reverts everything the other one changed while it sat there.
+     */
+    PATCH_SETTINGS: 'patch-settings',
     SET_SITE: 'set-site',
     RESET_SITE: 'reset-site',
     LEARNED: 'learned',
@@ -27,6 +35,8 @@
     CLEAR_USER_CSS: 'clear-user-css',
     STATE_CHANGED: 'state-changed',
     TOGGLE_SITE: 'toggle-site',
+    /** A page telling the worker where it is and whether it is themed. */
+    TAB_STATE: 'tab-state',
   };
 
   const STORAGE_KEY = 'settings';
@@ -66,6 +76,23 @@
     }
   }
 
+  /**
+   * Ask one frame, and mean it.
+   *
+   * The content script runs in every frame, so a tab-wide sendMessage is
+   * answered by whichever frame replies first. For anything that describes
+   * "the page" (its origin, the rung it settled on) that is a coin flip
+   * between the document and any advert or embed inside it. Frame 0 is the
+   * only frame entitled to answer those.
+   */
+  async function sendToFrame(tabId, frameId, message) {
+    try {
+      return await api.tabs.sendMessage(tabId, message, { frameId });
+    } catch {
+      return null;
+    }
+  }
+
   NX.browser = {
     api,
     isFirefox,
@@ -75,5 +102,6 @@
     writeSettings,
     send,
     sendToTab,
+    sendToFrame,
   };
 })(typeof self !== 'undefined' ? self : globalThis);

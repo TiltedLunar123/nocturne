@@ -36,11 +36,17 @@
             </select>
           </label>
           <div class="row" id="clock-row" hidden>
-            <span class="label">From</span>
+            <span class="label" id="clock-label">From</span>
             <div class="times">
-              <input type="time" id="schedule-from" />
+              <!--
+                Both inputs need names of their own. The visible "From" is a
+                span, not a label, and there are two identical time fields in
+                this row, so without these a screen reader announces the pair
+                as "time, time" with nothing to tell them apart.
+              -->
+              <input type="time" id="schedule-from" aria-label="Turn on at" />
               <span class="to">to</span>
-              <input type="time" id="schedule-to" />
+              <input type="time" id="schedule-to" aria-label="Turn off at" />
             </div>
           </div>
         </div>

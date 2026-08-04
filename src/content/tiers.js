@@ -300,15 +300,27 @@
    * rather than a convention.
    */
   /**
-   * Wrapped so the sweep sees the page's own colours rather than guard.css's.
+   * Wrapped twice, because there are two ways to read our own work back.
    *
-   * Without this the shell's forced background and text colour are read back
-   * as if the page had chosen them, and then mapped again: the root ends up a
-   * mid grey that does not match the body, leaving a visible seam below the
-   * content, and body text is dimmed twice.
+   * guard.css is the first. Its forced background and text colour are read
+   * back as if the page had chosen them, and then mapped again: the root ends
+   * up a mid grey that does not match the body, leaving a visible seam below
+   * the content, and body text is dimmed twice.
+   *
+   * Our own compute sheet is the second, and it only bites on the sweeps
+   * after the first. The engine runs a full re-sweep 250ms after load,
+   * precisely because hydration can repaint anything, and at that moment every
+   * already-tagged element computes to the colour Nocturne gave it rather than
+   * the one the site did. Mapping that a second time pushes surfaces back up
+   * the inverted ramp: a page that had settled on #0f1318 with a card at
+   * #14181d came out at #2f343a with the card at #2f3439, which is the same
+   * colour to any eye. Every elevation cue on the page collapsed one second
+   * after it loaded.
    */
   function readPhase(limit, nodes) {
-    return NX.probe.withoutGuard(() => readPhaseNow(limit, nodes));
+    return NX.probe.withoutGuard(() =>
+      NX.sheet.withoutOurs([SHEET_COMPUTE, SHEET_VARS], () => readPhaseNow(limit, nodes))
+    );
   }
 
   /**

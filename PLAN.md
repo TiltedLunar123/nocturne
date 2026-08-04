@@ -248,6 +248,53 @@ and the wrong one looked fine until something measured it.
 - **Fixtures that build their DOM in script are asserted.** A mangled closing tag left
   the heavy fixture nearly empty, which quietly turned the performance check into a
   measurement of a blank page.
+- **`tabs.Tab` has no `url` under our permission set, so nothing may read it.** With
+  `storage`, `alarms` and `scripting`, and `<all_urls>` optional and ungranted, Chrome
+  returns Tab objects with the `url`, `title` and `favIconUrl` keys absent entirely,
+  not empty. Every surface that parsed an origin out of one got null on every page, and
+  the whole per-site half of the product was unreachable while every test stayed green.
+  The content script is the only thing that knows where it is, and the only thing that
+  can evaluate `prefers-color-scheme`, so it reports both and the worker stops guessing.
+  Adding `tabs` would have fixed it and would also have traded away the privacy claim
+  the product is built on, which is why it was not the fix.
+- **Only frame 0 speaks for the tab.** The content script runs in every frame, and both
+  `scripting.insertCSS` with a bare tabId and the per-tab settings key mean the top
+  document. An embed sending either was writing over its embedder, at USER origin.
+  Guarded on the sending side and again on the receiving side.
+- **The read phase stands our own sheets down, not just guard.css.** The first sweep
+  reads the site's colours. Every later sweep reads Nocturne's, because the compute
+  sheet is live by then, and mapping an already-mapped colour walks it back up the
+  inverted ramp until cards meet the page behind them. Media is flipped rather than the
+  element removed, so the sheet is not rebuilt on every read.
+- **Session records go through one queue.** They are read-modify-write over a single
+  key and `broadcast` pokes every tab at once, so the handlers interleaved and the last
+  writer won. For the user-CSS map a lost record is unrecoverable: `removeCSS` needs the
+  exact string that was inserted.
+- **`undefined` is not a wire value.** Extension messaging serialises, so a patch key
+  set to `undefined` does not arrive as undefined, it does not arrive. Clearing a
+  per-site override used that, so a site switched off in the popup could never be
+  switched back on there. `NX.settings.CLEAR` is `null` for this reason, and the worker
+  test harness round trips every message through JSON so the class cannot hide again.
+- **Surfaces send patches, not snapshots.** The popup and the options page can both be
+  open, each holding settings read when it loaded, and a surface that sends its whole
+  snapshot back reverts whatever the other one changed meanwhile.
+- **A pinned mode outranks the learned tier, but a demotion is not a preference.** The
+  learned rung is an optimisation for `auto`. Applying it first meant "Site theme only"
+  started the climb above the early return that makes the mode mean anything, and
+  recoloured pages it promises never to touch. Throwing the learned rung away entirely
+  under every pinned mode then cost the filter demotion under `dynamic`, so a page that
+  had already melted paid for the whole sweep again on every load. `dynamic` keeps the
+  demotion and nothing else.
+- **Standing down withdraws the USER-origin sheet.** `sheet.clearAll` only reaches the
+  sheets this document owns. The stubborn-sites copy lives at USER origin and outranks
+  everything the page can write, so leaving it behind kept the page inverted for the
+  life of the document while the engine reported itself off.
+- **Losing the theme fight escalates, unless escalating is the thing the mode forbids.**
+  Handing control back to the ladder is right for `auto` and wrong for "Site theme
+  only", whose every higher rung is the recolouring it refuses. Re-entering the native
+  rung instead re-applies the class the site has already stripped and starts the fight
+  over, with a fresh re-apply budget each time: an unbounded loop, not a capped one.
+  The mode now stops at the page as the site renders it.
 
 ## Known limits, stated rather than hidden
 

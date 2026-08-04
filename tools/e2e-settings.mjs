@@ -83,7 +83,8 @@ const READ = `({
   tier: document.documentElement.getAttribute('data-nocturne-tier'),
   tagged: document.querySelectorAll('[data-nx]').length,
   sheets: document.querySelectorAll('style[data-nocturne]').length,
-  filtered: getComputedStyle(document.documentElement).filter
+  filtered: getComputedStyle(document.documentElement).filter,
+  fights: document.documentElement.getAttribute('data-fights')
 })`;
 
 async function themedPage(cdp, url, { expectTier = true } = {}) {
@@ -114,6 +115,25 @@ async function themedPage(cdp, url, { expectTier = true } = {}) {
   return value;
 }
 
+/**
+ * Run an expression in an extension page, for things that must go through the
+ * worker rather than straight into storage. A direct storage write does not
+ * broadcast, so the content script never learns anything changed.
+ */
+async function sendFromExtension(cdp, extensionId, expression) {
+  const { targetId } = await cdp.send('Target.createTarget', {
+    url: `chrome-extension://${extensionId}/options/options.html`,
+  });
+  const sessionId = await cdp.attach(targetId);
+  await cdp.send('Runtime.enable', {}, sessionId);
+  await waitFor('extension page', () =>
+    cdp.evaluate(sessionId, `typeof chrome !== 'undefined' && !!chrome.runtime`)
+  );
+  const value = await cdp.evaluate(sessionId, expression);
+  await cdp.send('Target.closeTarget', { targetId });
+  return value;
+}
+
 /** Write settings from an extension page, which is the only context that may. */
 async function setSettings(cdp, extensionId, settings) {
   const { targetId } = await cdp.send('Target.createTarget', {
@@ -127,6 +147,45 @@ async function setSettings(cdp, extensionId, settings) {
     `chrome.storage.local.set({ settings: ${JSON.stringify(settings)} }).then(() => 'ok')`
   );
   await cdp.send('Target.closeTarget', { targetId });
+}
+
+/**
+ * What an extension page can actually learn about the open tab.
+ *
+ * This is the check that was missing. Nocturne ships with no `tabs`
+ * permission and no default host permission, so `tabs.query` returns Tab
+ * objects with no `url` key at all, and every surface that derived the origin
+ * from one derived null: the popup claimed it could not run anywhere, the site
+ * switch was disabled, the toolbar icon was stuck off, and the site shortcut
+ * did nothing. The origin has to come from the page, over frame 0.
+ */
+async function inspectTab(cdp, extensionId, pageUrl) {
+  const { targetId } = await cdp.send('Target.createTarget', {
+    url: `chrome-extension://${extensionId}/options/options.html`,
+  });
+  const sessionId = await cdp.attach(targetId);
+  await cdp.send('Runtime.enable', {}, sessionId);
+  await waitFor('extension page', () =>
+    cdp.evaluate(sessionId, `typeof chrome !== 'undefined' && !!chrome.tabs`)
+  );
+  const value = await cdp.evaluate(
+    sessionId,
+    `(async () => {
+       const tabs = await chrome.tabs.query({});
+       const target = tabs.find((t) => t.id != null && t.url === ${JSON.stringify(pageUrl)});
+       const any = tabs.find((t) => t.id != null && t.url == null);
+       const tab = target || any;
+       const report = tab ? await chrome.tabs.sendMessage(tab.id, { type: 'get-state' }, { frameId: 0 }).catch(() => null) : null;
+       return {
+         urlWasReadable: tab ? typeof tab.url === 'string' : false,
+         originFromPage: report ? report.origin : null,
+         tierFromPage: report ? report.tier : null,
+         title: tab ? await chrome.action.getTitle({ tabId: tab.id }) : null,
+       };
+     })()`
+  );
+  await cdp.send('Target.closeTarget', { targetId });
+  return value;
 }
 
 async function main() {
@@ -195,7 +254,176 @@ async function main() {
       pinnedNative.filtered
     );
 
-    await setSettings(cdp, variant.id, { enabled: true, mode: 'filter' });
+    /*
+     * The same promise, but for an origin the ladder has already been up.
+     *
+     * A site visited on `auto` first records where the ladder settled, so the
+     * next visit can start there. That shortcut used to be applied before the
+     * pinned-mode check rather than after, so switching an already-visited
+     * site to "Site theme only" started the climb at the learned rung and
+     * sailed straight past the early return that makes the mode mean
+     * anything. The mode silently did the opposite of what it says.
+     */
+    await setSettings(cdp, variant.id, {
+      enabled: true,
+      mode: 'native',
+      learned: { localhost: { tier: 3, at: 1 } },
+    });
+    const pinnedNativeLearned = await themedPage(cdp, legacy);
+    record(
+      pinnedNativeLearned.tagged === 0,
+      'mode native: still does not recolour an origin that learned the compute tier',
+      `${pinnedNativeLearned.tagged} elements tagged, tier ${pinnedNativeLearned.tier}`
+    );
+    record(
+      pinnedNativeLearned.filtered === 'none',
+      'mode native: a learned tier does not drag it into inversion either',
+      pinnedNativeLearned.filtered
+    );
+
+    /*
+     * The per-site half of the product, end to end in a real browser.
+     *
+     * Everything above drives storage directly, so none of it would have
+     * noticed that no surface could work out which site it was looking at.
+     */
+    {
+      await setSettings(cdp, variant.id, { enabled: true, mode: 'auto' });
+      const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+      const sessionId = await cdp.attach(targetId);
+      await cdp.send('Page.enable', {}, sessionId);
+      await cdp.send('Runtime.enable', {}, sessionId);
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: 'light' }],
+      }, sessionId);
+      await cdp.send('Page.navigate', { url: legacy }, sessionId);
+      await waitFor('themed', () =>
+        cdp.evaluate(sessionId, `document.documentElement.getAttribute('data-nocturne-tier') != null`)
+      , { timeout: 15000, interval: 120 });
+      await new Promise((r) => setTimeout(r, 700));
+
+      /*
+       * Note that this harness's build grants <all_urls> so the stubborn
+       * checks above can run, which means tab.url happens to be readable
+       * here. That is exactly why the assertions below ignore it: they check
+       * that the origin arrives from the page, which is the path the shipped
+       * permission set actually has. The shipped permission set itself is
+       * pinned by the release gate in tools/build.mjs.
+       */
+      const seen = await inspectTab(cdp, variant.id, legacy);
+      record(
+        seen.originFromPage === 'localhost',
+        'per-site: the page reports its own origin over frame 0',
+        String(seen.originFromPage)
+      );
+      record(
+        seen.tierFromPage != null,
+        'per-site: the page reports the rung it settled on',
+        String(seen.tierFromPage)
+      );
+      record(
+        /on for this site/.test(seen.title || ''),
+        'per-site: the toolbar title reflects a themed tab',
+        String(seen.title)
+      );
+      await cdp.send('Target.closeTarget', { targetId });
+    }
+
+    /*
+     * A site that keeps stripping the theme class does not turn "Site theme
+     * only" into permission to recolour.
+     *
+     * Losing that fight hands control back to the ladder, which is right for
+     * `auto` and wrong here: everything above the native rung is exactly what
+     * this mode refuses. Re-entering the native rung instead would re-apply
+     * the class the site has already stripped five times and restart the
+     * fight, so the honest outcome is the page as the site renders it.
+     */
+    {
+      await setSettings(cdp, variant.id, { enabled: true, stubborn: false, mode: 'native' });
+      const hostile = await themedPage(cdp, `http://localhost:${port}/hostile-theme.html`);
+      record(
+        Number(hostile.fights) >= 5,
+        'hostile site: the page really did strip the theme class back off',
+        `${hostile.fights} times`
+      );
+      record(
+        hostile.tagged === 0 && hostile.filtered === 'none',
+        'hostile site: losing the fight does not license recolouring under mode native',
+        `tier ${hostile.tier}, ${hostile.tagged} tagged, filter ${hostile.filtered}`
+      );
+    }
+
+    /*
+     * A demotion to inversion is a performance backstop, not a preference, so
+     * it still applies when the user has asked for a generated theme. Paying
+     * for the whole sweep again on a page that already melted under it is the
+     * cost the demotion exists to avoid, and a pass that happens to measure
+     * well would re-learn compute and undo it entirely.
+     */
+    {
+      await setSettings(cdp, variant.id, {
+        enabled: true,
+        stubborn: false,
+        mode: 'dynamic',
+        learned: { localhost: { tier: 4, at: 1 } },
+      });
+      const demoted = await themedPage(cdp, legacy);
+      record(
+        demoted.tier === '4' && demoted.tagged === 0,
+        'demotion: a learned filter still short-circuits the sweep under mode dynamic',
+        `tier ${demoted.tier}, ${demoted.tagged} tagged`
+      );
+    }
+
+    /*
+     * Turning Nocturne off has to take the USER-origin sheet with it.
+     *
+     * That sheet outranks every rule the page itself can write, so a copy
+     * left behind is not a cosmetic leftover: the page stays inverted, or
+     * token-remapped, for the life of the document, and nothing on the page
+     * or in the extension can override it while Nocturne reports itself off.
+     * Driven through the worker rather than through storage, because it is
+     * the broadcast that makes the content script re-apply.
+     */
+    {
+      await setSettings(cdp, variant.id, { enabled: true, stubborn: true, mode: 'filter' });
+      const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+      const sessionId = await cdp.attach(targetId);
+      await cdp.send('Page.enable', {}, sessionId);
+      await cdp.send('Runtime.enable', {}, sessionId);
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: 'light' }],
+      }, sessionId);
+      await cdp.send('Page.navigate', { url: legacy }, sessionId);
+      await waitFor('inverted', async () => {
+        const value = await cdp.evaluate(sessionId, READ);
+        return value.filtered && value.filtered !== 'none' ? value : null;
+      }, { timeout: 15000, interval: 120 });
+      await new Promise((r) => setTimeout(r, 700));
+
+      await sendFromExtension(
+        cdp,
+        variant.id,
+        `chrome.runtime.sendMessage({ type: 'set-site', origin: 'localhost', patch: { enabled: false } })`
+      );
+      await new Promise((r) => setTimeout(r, 1200));
+
+      const after = await cdp.evaluate(sessionId, READ);
+      record(
+        after.filtered === 'none',
+        'stand down: the user-origin sheet goes with it',
+        `filter is ${after.filtered}`
+      );
+      record(
+        after.sheets === 0,
+        'stand down: no author sheets are left either',
+        `${after.sheets} sheets`
+      );
+      await cdp.send('Target.closeTarget', { targetId });
+    }
+
+    await setSettings(cdp, variant.id, { enabled: true, stubborn: false, mode: 'filter' });
     const pinnedFilter = await themedPage(cdp, legacy);
     record(
       pinnedFilter.filtered !== 'none' && pinnedFilter.tier === '4',

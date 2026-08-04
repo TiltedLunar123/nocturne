@@ -11,6 +11,17 @@
 
   const MODES = ['auto', 'native', 'dynamic', 'filter', 'off'];
 
+  /**
+   * What a surface puts in a patch to clear a per-site override.
+   *
+   * Explicitly not `undefined`. Extension messaging serialises, and JSON drops
+   * a key whose value is undefined entirely, so "clear this override" arrived
+   * at the worker as "change nothing at all": a site switched off in the popup
+   * could never be switched back on from the popup. `null` survives the trip
+   * and `setSite` already treats both the same way.
+   */
+  const CLEAR = null;
+
   const DEFAULTS = {
     version: 1,
     enabled: true,
@@ -181,6 +192,7 @@
   NX.settings = {
     DEFAULTS,
     MODES,
+    CLEAR,
     SITE_KEYS,
     sanitise,
     resolve,

@@ -28,24 +28,54 @@
    * lifetime of the documents these entries describe.
    */
   const USER_CSS_KEY = 'userCss';
+  /** Which origin each tab reported, and whether it themed itself. */
+  const TAB_STATE_KEY = 'tabState';
   const session = api.storage.session || api.storage.local;
 
-  async function readUserCss() {
-    try {
-      const stored = await session.get(USER_CSS_KEY);
-      const value = stored && stored[USER_CSS_KEY];
-      return value && typeof value === 'object' ? value : {};
-    } catch {
-      return {};
-    }
+  /**
+   * Every session record goes through one queue.
+   *
+   * Each of these is a read-modify-write over a single storage key, and
+   * `broadcast` pokes every open tab at once, so the handlers all reach their
+   * awaits together and the last writer wins. For the user-CSS map that is not
+   * a cache miss anyone recovers from: removeCSS needs the EXACT string that
+   * was inserted, so a dropped record strands a USER-origin sheet, and USER
+   * origin outranks everything a content script can write. The page would be
+   * left both themed and inverted with no way to undo either until it
+   * navigates.
+   */
+  let queue = Promise.resolve();
+  function serialise(work) {
+    const next = queue.then(work, work);
+    queue = next.then(
+      () => {},
+      () => {}
+    );
+    return next;
   }
 
-  async function writeUserCss(map) {
-    try {
-      await session.set({ [USER_CSS_KEY]: map });
-    } catch {
-      /* storage full or unavailable; the next insert simply re-registers */
-    }
+  /**
+   * Read one session map, hand it to `mutate`, write it back. The whole
+   * sequence holds the queue, so no other handler can interleave with it.
+   */
+  function updateSession(key, mutate) {
+    return serialise(async () => {
+      let map = {};
+      try {
+        const stored = await session.get(key);
+        const value = stored && stored[key];
+        if (value && typeof value === 'object') map = value;
+      } catch {
+        map = {};
+      }
+      const result = await mutate(map);
+      try {
+        await session.set({ [key]: map });
+      } catch {
+        /* storage full or unavailable; the next write simply re-registers */
+      }
+      return result;
+    });
   }
 
   const ICON_ON = {
@@ -67,27 +97,77 @@
     const tabs = await api.tabs.query({});
     for (const tab of tabs) {
       if (!tab.id) continue;
+      // Each page answers with a fresh TAB_STATE once it has re-applied, and
+      // that is what repaints the toolbar. The worker does not guess.
       NX.browser.sendToTab(tab.id, { type: MSG.STATE_CHANGED });
-      refreshIcon(tab);
     }
   }
 
-  async function refreshIcon(tab) {
-    if (!tab || !tab.id || !action) return;
-    const settings = await NX.browser.readSettings();
-    const origin = NX.settings.originOf(tab.url);
-    const systemDark = false; // the worker has no media query; clock still works
-    const resolved = NX.settings.resolve(settings, origin, { systemDark });
-    const on = !!origin && resolved.active;
+  /**
+   * The toolbar is painted from what the page reported, never from `tab.url`.
+   *
+   * Nocturne ships with no `tabs` permission and no default host permission,
+   * which is the entire privacy claim. Under that permission set Chrome hands
+   * back Tab objects with no `url` key at all, so anything that parsed an
+   * origin out of one got null on every page: the icon was stuck off, the
+   * title always read "off for this site", and the site shortcut did nothing.
+   * The content script is the only thing that knows where it is, and it is
+   * also the only thing that can see `prefers-color-scheme`, so it reports
+   * both rather than being second-guessed from out here.
+   */
+  async function paintIcon(tabId, origin, active) {
+    if (!tabId || !action) return;
+    const on = !!origin && !!active;
     try {
-      await action.setIcon({ tabId: tab.id, path: on ? ICON_ON : ICON_OFF });
+      await action.setIcon({ tabId, path: on ? ICON_ON : ICON_OFF });
       await action.setTitle({
-        tabId: tab.id,
+        tabId,
         title: on ? 'Nocturne: on for this site' : 'Nocturne: off for this site',
       });
     } catch {
       /* tab closed mid-update */
     }
+  }
+
+  async function noteTabState(tabId, origin, active) {
+    if (!tabId) return;
+    await updateSession(TAB_STATE_KEY, (map) => {
+      map[String(tabId)] = { origin: origin || null, active: !!active };
+    });
+    await paintIcon(tabId, origin, active);
+  }
+
+  function readTabState(tabId) {
+    return updateSession(TAB_STATE_KEY, (map) => map[String(tabId)] || null);
+  }
+
+  function forgetTabState(tabId) {
+    return updateSession(TAB_STATE_KEY, (map) => {
+      delete map[String(tabId)];
+    });
+  }
+
+  /**
+   * Repaint from the stored record. A tab with no record has either not
+   * reported yet or cannot run a content script at all, and painting a guess
+   * for it is what produced the permanently-off icon in the first place.
+   */
+  async function refreshIcon(tabId) {
+    const known = await readTabState(tabId);
+    if (!known) return;
+    await paintIcon(tabId, known.origin, known.active);
+  }
+
+  /**
+   * The origin of a tab, asked for rather than parsed. Frame 0 only: the
+   * script runs in every frame and an embed must not answer for the page.
+   */
+  async function originForTab(tabId) {
+    if (!tabId) return null;
+    const known = await readTabState(tabId);
+    if (known && known.origin) return known.origin;
+    const report = await NX.browser.sendToFrame(tabId, 0, { type: MSG.GET_STATE });
+    return (report && report.origin) || null;
   }
 
   async function setSite(origin, patch) {
@@ -120,43 +200,56 @@
   async function applyUserCss(tabId, css) {
     if (!tabId) return false;
     const granted = await api.permissions.contains({ origins: ['<all_urls>'] }).catch(() => false);
-    const map = await readUserCss();
-    const key = String(tabId);
-    const previous = map[key];
 
-    // Withdrawing the permission must still let the last sheet be removed.
-    if (!granted && !previous) return false;
+    return updateSession(USER_CSS_KEY, async (map) => {
+      const key = String(tabId);
+      const previous = map[key];
 
-    try {
-      if (previous) {
-        await api.scripting
-          .removeCSS({ target: { tabId }, css: previous, origin: 'USER' })
-          .catch(() => {});
+      // Withdrawing the permission must still let the last sheet be removed.
+      if (!granted && !previous) return false;
+
+      try {
+        if (previous) {
+          await api.scripting
+            .removeCSS({ target: { tabId }, css: previous, origin: 'USER' })
+            .catch(() => {});
+          delete map[key];
+        }
+        if (css && granted) {
+          await api.scripting.insertCSS({ target: { tabId }, css, origin: 'USER' });
+          map[key] = css;
+        }
+        return true;
+      } catch {
         delete map[key];
+        return false;
       }
-      if (css && granted) {
-        await api.scripting.insertCSS({ target: { tabId }, css, origin: 'USER' });
-        map[key] = css;
-      }
-      await writeUserCss(map);
-      return true;
-    } catch {
-      delete map[key];
-      await writeUserCss(map);
-      return false;
-    }
+    });
   }
 
-  async function forgetUserCss(tabId) {
-    const map = await readUserCss();
-    if (map[String(tabId)] === undefined) return;
-    delete map[String(tabId)];
-    await writeUserCss(map);
+  function forgetUserCss(tabId) {
+    return updateSession(USER_CSS_KEY, (map) => {
+      delete map[String(tabId)];
+    });
   }
 
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || typeof message !== 'object') return undefined;
     const tabId = sender && sender.tab ? sender.tab.id : null;
+
+    /*
+     * Anything that speaks for the whole tab has to come from the whole tab.
+     *
+     * The content script runs in every frame, and `scripting.insertCSS` with
+     * only a tabId targets the TOP frame. So a message from an advert or an
+     * embed does not restyle that embed, it restyles its embedder, at USER
+     * origin, which outranks every rule the embedding page can write for
+     * itself. The same goes for the origin used to paint the toolbar. A
+     * missing frameId means a caller with no frame at all, and those already
+     * have no tabId to act on.
+     */
+    const frameId = sender && typeof sender.frameId === 'number' ? sender.frameId : 0;
+    const speaksForTab = frameId === 0;
 
     switch (message.type) {
       case MSG.GET_STATE:
@@ -166,9 +259,15 @@
         })();
         return true;
 
-      case MSG.SET_SETTINGS:
+      case MSG.PATCH_SETTINGS:
         (async () => {
-          const saved = await NX.browser.writeSettings(message.settings);
+          // Read, then merge, then write. The patch is the only thing the
+          // sender is entitled to an opinion about.
+          const current = await NX.browser.readSettings();
+          const saved = await NX.browser.writeSettings({
+            ...current,
+            ...(message.patch && typeof message.patch === 'object' ? message.patch : {}),
+          });
           await syncAlarm();
           await broadcast();
           sendResponse({ settings: saved });
@@ -199,15 +298,19 @@
         remember(message.origin, message.tier);
         return undefined;
 
+      case MSG.TAB_STATE:
+        if (speaksForTab) noteTabState(tabId, message.origin, message.active);
+        return undefined;
+
       case MSG.APPLY_USER_CSS:
         (async () => {
-          sendResponse({ ok: await applyUserCss(tabId, message.css) });
+          sendResponse({ ok: speaksForTab && (await applyUserCss(tabId, message.css)) });
         })();
         return true;
 
       case MSG.CLEAR_USER_CSS:
         (async () => {
-          sendResponse({ ok: await applyUserCss(tabId, '') });
+          sendResponse({ ok: speaksForTab && (await applyUserCss(tabId, '')) });
         })();
         return true;
 
@@ -216,21 +319,21 @@
     }
   });
 
-  api.tabs.onUpdated.addListener((tabId, info, tab) => {
-    // A navigation discards the document, and with it any inserted CSS, so the
-    // recorded text would only ever be a stale key for a removeCSS that has
-    // nothing left to remove.
-    if (info.status === 'loading') forgetUserCss(tabId);
-    if (info.status) refreshIcon(tab);
-  });
-  api.tabs.onActivated.addListener(async ({ tabId }) => {
-    try {
-      refreshIcon(await api.tabs.get(tabId));
-    } catch {
-      /* gone already */
+  api.tabs.onUpdated.addListener((tabId, info) => {
+    // A navigation discards the document, and with it any inserted CSS and any
+    // claim the old page made about where it was. The recorded CSS text would
+    // only ever be a stale key for a removeCSS that has nothing left to remove.
+    if (info.status === 'loading') {
+      forgetUserCss(tabId);
+      forgetTabState(tabId);
     }
+    if (info.status === 'complete') refreshIcon(tabId);
   });
-  api.tabs.onRemoved.addListener((tabId) => forgetUserCss(tabId));
+  api.tabs.onActivated.addListener(({ tabId }) => refreshIcon(tabId));
+  api.tabs.onRemoved.addListener((tabId) => {
+    forgetUserCss(tabId);
+    forgetTabState(tabId);
+  });
 
   /**
    * A clock schedule needs something to wake the worker at the boundary.
@@ -274,7 +377,7 @@
         return;
       }
       if (command === 'toggle-site' && tab) {
-        const origin = NX.settings.originOf(tab.url);
+        const origin = await originForTab(tab.id);
         if (!origin) return;
         const settings = await NX.browser.readSettings();
         const current = settings.sites[origin] || {};
