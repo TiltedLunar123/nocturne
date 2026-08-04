@@ -98,8 +98,41 @@ test('modern colour syntax inside a compound value is remapped too', () => {
 });
 
 test('a url() in a background is left completely alone', () => {
-  const input = 'url("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5")';
+  /*
+   * The fixture has to contain something the colour pattern would match, or
+   * the assertion holds with the url-splitting loop deleted and proves
+   * nothing. A fragment identifier made of hex digits is exactly the case
+   * that motivated the loop: rewriting "#cafe" breaks the reference and the
+   * image disappears.
+   */
+  const input = 'url("sprite.svg#cafe")';
+  assert.match(input, /#[0-9a-f]{3,8}\b/i, 'the fixture must contain a colour-shaped token');
   assert.equal(tiers.remapCompound(input, 'bg', t), input);
+});
+
+test('colours around a url() are still remapped', () => {
+  const input = 'linear-gradient(#ffffff, #000000), url("sprite.svg#cafe")';
+  const output = tiers.remapCompound(input, 'bg', t);
+  assert.ok(output.includes('url("sprite.svg#cafe")'), output);
+  assert.ok(!output.includes('#ffffff'), output);
+  assert.ok(!output.includes('#000000'), output);
+});
+
+test('every attribute a signal can set is watched on the root', () => {
+  const observe = loadLibs(['signals', 'content/observe']).observe;
+  const watched = new Set(observe.rootAttributes());
+  for (const signal of signals.SIGNALS) {
+    if (signal.attr) {
+      assert.ok(
+        watched.has(signal.attr[0]),
+        `signal ${signal.id} sets ${signal.attr[0]}, which nothing watches for removal`
+      );
+    }
+    for (const [name] of signal.extraAttrs || []) {
+      assert.ok(watched.has(name), `signal ${signal.id} sets ${name}, which nothing watches`);
+    }
+  }
+  assert.ok(watched.has('class'), 'class-based signals need watching too');
 });
 
 test('box-shadow keeps its offsets and its inset keyword', () => {

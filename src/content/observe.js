@@ -168,6 +168,25 @@
    * native rung as a success is a worse outcome than the loop this cap exists
    * to prevent.
    */
+  /**
+   * Every attribute a signal can set, derived from the signal table.
+   *
+   * Hand-listing these meant the list covered five of the ten attributes
+   * signals.js actually writes, so for the other five a site's own theme
+   * script could strip Nocturne's attribute straight back off with nothing
+   * watching: the page went light again while the engine went on reporting
+   * the native rung as a success. Deriving it means a signal added over there
+   * cannot be silently unwatchable over here.
+   */
+  function rootAttributes() {
+    const names = new Set(['class']);
+    for (const signal of (NX.signals && NX.signals.SIGNALS) || []) {
+      if (signal.attr) names.add(signal.attr[0]);
+      for (const [name] of signal.extraAttrs || []) names.add(name);
+    }
+    return Array.from(names);
+  }
+
   function watchRoot(onLost, check, onGiveUp) {
     let reapplied = 0;
     const observer = new MutationObserver(() => {
@@ -183,10 +202,10 @@
     });
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['class', 'data-theme', 'data-bs-theme', 'data-color-mode', 'data-mode'],
+      attributeFilter: rootAttributes(),
     });
     return () => observer.disconnect();
   }
 
-  NX.observe = { start, stop, run, watchRoot, state };
+  NX.observe = { start, stop, run, watchRoot, rootAttributes, state };
 })(typeof self !== 'undefined' ? self : globalThis);
