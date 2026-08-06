@@ -28,6 +28,7 @@
     stopRootWatch: null,
     started: false,
     ready: false,
+    announced: false,
   };
 
   const root = () => document.documentElement;
@@ -350,10 +351,20 @@
    */
   function announce(ctx) {
     if (!isTopFrame()) return;
+    /*
+     * `fresh` is true only on this document's first report. A content script
+     * boots once per document, so it is the one honest signal the worker has
+     * that the previous document in this tab is gone and anything it inserted
+     * went with it. Every later report comes from a re-apply, where the sheet
+     * the worker is holding a record of is still very much on the page.
+     */
+    const fresh = !state.announced;
+    state.announced = true;
     NX.browser.send({
       type: MSG.TAB_STATE,
       origin: state.origin,
       active: !!(ctx && ctx.active),
+      fresh,
     });
   }
 

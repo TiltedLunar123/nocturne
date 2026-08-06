@@ -154,8 +154,15 @@
     }
   }
 
-  async function noteTabState(tabId, origin, active) {
+  async function noteTabState(tabId, origin, active, fresh) {
     if (!tabId) return;
+    /*
+     * A content script only ever boots into a document that has just been
+     * created, so `fresh` is the one trustworthy signal that the previous
+     * document in this tab is gone. Anything inserted into it went with it,
+     * and the recorded CSS text is now only a stale key.
+     */
+    if (fresh) await forgetUserCss(tabId);
     await updateSession(TAB_STATE_KEY, (map) => {
       map[String(tabId)] = { origin: origin || null, active: !!active };
     });
@@ -338,7 +345,7 @@
         return undefined;
 
       case MSG.TAB_STATE:
-        if (speaksForTab) noteTabState(tabId, message.origin, message.active);
+        if (speaksForTab) noteTabState(tabId, message.origin, message.active, message.fresh);
         return undefined;
 
       case MSG.APPLY_USER_CSS:
@@ -359,13 +366,22 @@
   });
 
   api.tabs.onUpdated.addListener((tabId, info) => {
-    // A navigation discards the document, and with it any inserted CSS and any
-    // claim the old page made about where it was. The recorded CSS text would
-    // only ever be a stale key for a removeCSS that has nothing left to remove.
-    if (info.status === 'loading') {
-      forgetUserCss(tabId);
-      forgetTabState(tabId);
-    }
+    /*
+     * `status: 'loading'` does not mean the document is being replaced.
+     *
+     * Clicking an in-page anchor, or any SPA calling history.pushState, fires
+     * it while the same document stays on screen. Dropping the recorded CSS
+     * text there threw away the only key removeCSS can be called with, so the
+     * USER-origin sheet became unremovable: the page stayed themed, above
+     * everything the page or the content script could write, and standing
+     * Nocturne down could not take it off again.
+     *
+     * Only a content script reporting that it has just booted proves the old
+     * document is gone, so that is what discards the record now. The tab's
+     * own state is different: it is what paints the toolbar, and a stale icon
+     * during a navigation is worse than none.
+     */
+    if (info.status === 'loading') forgetTabState(tabId);
     if (info.status === 'complete') refreshIcon(tabId);
   });
   api.tabs.onActivated.addListener(({ tabId }) => refreshIcon(tabId));

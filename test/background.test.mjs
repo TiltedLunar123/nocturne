@@ -518,3 +518,56 @@ test('several tabs reporting a rung at once keep all of them', async () => {
     'every tab that reported a rung must be remembered, not just the last writer'
   );
 });
+
+test('an in-page navigation does not strand the user-origin sheet', async () => {
+  const { NX, calls, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+
+  await post(listeners, { type: MSG.TAB_STATE, origin: 'example.com', active: true, fresh: true }, { tab: { id: 6 } });
+  await post(listeners, { type: MSG.APPLY_USER_CSS, css: 'body{color:red}' }, { tab: { id: 6 } });
+  await settle();
+  assert.equal(calls.insertCSS.length, 1, 'the sheet should be in');
+
+  /*
+   * Clicking an in-page anchor, or any SPA calling history.pushState, fires
+   * tabs.onUpdated with status 'loading' while the SAME document stays on
+   * screen. Dropping the recorded CSS text there loses the only key removeCSS
+   * can be called with, and a USER-origin sheet outranks everything the page
+   * or the content script can write, so the page is left themed with no way
+   * to undo it for the life of the document.
+   */
+  for (const fn of listeners.updated || []) fn(6, { status: 'loading' }, {});
+  await settle();
+
+  await post(listeners, { type: MSG.CLEAR_USER_CSS }, { tab: { id: 6 } });
+  await settle();
+
+  assert.deepEqual(
+    calls.removeCSS.map((c) => c.css),
+    ['body{color:red}'],
+    'the sheet must still be removable after an in-page navigation'
+  );
+});
+
+test('a genuinely new document drops the old record instead of removing from it', async () => {
+  const { NX, calls, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+
+  await post(listeners, { type: MSG.TAB_STATE, origin: 'one.example', active: true, fresh: true }, { tab: { id: 8 } });
+  await post(listeners, { type: MSG.APPLY_USER_CSS, css: 'body{color:red}' }, { tab: { id: 8 } });
+  await settle();
+
+  // A new document in the same tab: the old sheet went with the old document,
+  // so there is nothing left to remove and the record is just a stale key.
+  // Only a content script that has just booted can report this.
+  await post(listeners, { type: MSG.TAB_STATE, origin: 'two.example', active: true, fresh: true }, { tab: { id: 8 } });
+  await post(listeners, { type: MSG.APPLY_USER_CSS, css: 'body{color:blue}' }, { tab: { id: 8 } });
+  await settle();
+
+  assert.deepEqual(
+    calls.removeCSS.map((c) => c.css),
+    [],
+    'nothing should be removed from a document that no longer exists'
+  );
+  assert.deepEqual(calls.insertCSS.map((c) => c.css), ['body{color:red}', 'body{color:blue}']);
+});
