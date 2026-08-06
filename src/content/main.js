@@ -29,6 +29,7 @@
     started: false,
     ready: false,
     announced: false,
+    mirrored: false,
   };
 
   const root = () => document.documentElement;
@@ -68,6 +69,7 @@
      * it, so only the top frame withdraws it.
      */
     if (isTopFrame()) NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+    state.mirrored = false;
     state.tier = TIER.OFF;
     state.ready = false;
   }
@@ -242,6 +244,7 @@
     if (!isTopFrame()) return;
     if (!ctx.stubborn || (outcome && outcome.untouched)) {
       NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+      state.mirrored = false;
       return;
     }
     const css = Array.from(NX.sheet.elements.values())
@@ -250,6 +253,30 @@
     NX.browser.send(
       css.trim() ? { type: MSG.APPLY_USER_CSS, css } : { type: MSG.CLEAR_USER_CSS }
     );
+    state.mirrored = !!css.trim();
+  }
+
+  /**
+   * Take the USER-origin mirror off the page and wait until it is really off.
+   *
+   * Nothing may measure the page while it is up. The mirror is a copy of
+   * Nocturne's own rules at the one origin a content script cannot suspend:
+   * `sheet.withoutOurs` flips `media` on the sheets this document owns, and
+   * the mirror is not one of them, it was inserted by the worker. So a second
+   * climb reads Nocturne's own colours, decides the page is already dark,
+   * declares the page untouched, and then withdraws the mirror it just
+   * measured. The page ends up fully light while the popup reports it as
+   * using the site's own dark theme.
+   *
+   * Removal is a round trip through the worker, so the blunt half of guard.css
+   * goes back up for the duration rather than leaving the page bare.
+   */
+  async function dropMirror() {
+    if (!isTopFrame() || !state.mirrored) return;
+    state.ready = false;
+    root().removeAttribute('data-nocturne-ready');
+    await NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+    state.mirrored = false;
   }
 
   /**
@@ -388,6 +415,9 @@
     NX.observe.stop();
     NX.sheet.clearAll();
     NX.tiers.clearCompute();
+    // Before anything measures the page, and after clearAll, which cannot
+    // reach a sheet this document does not own.
+    await dropMirror();
     if (state.undoSignal) {
       state.undoSignal();
       state.undoSignal = null;

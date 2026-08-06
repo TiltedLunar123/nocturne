@@ -423,6 +423,59 @@ async function main() {
       await cdp.send('Target.closeTarget', { targetId });
     }
 
+    /*
+     * A settings change must not leave a stubborn site light.
+     *
+     * apply() tears down the sheets this document owns and climbs again, but
+     * clearAll cannot reach the USER-origin mirror: that one was inserted by
+     * the worker and a content script cannot suspend it. So the second climb
+     * measured Nocturne's own colours, concluded the page was already dark,
+     * returned "untouched", and then withdrew the very mirror it had just
+     * measured. The page went white and the popup reported it as using the
+     * site's own dark theme.
+     */
+    {
+      const tokens = `http://localhost:${port}/tokens.html`;
+      await setSettings(cdp, variant.id, { enabled: true, stubborn: true, mode: 'auto' });
+      const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+      const sessionId = await cdp.attach(targetId);
+      await cdp.send('Page.enable', {}, sessionId);
+      await cdp.send('Runtime.enable', {}, sessionId);
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: 'light' }],
+      }, sessionId);
+      await cdp.send('Page.navigate', { url: tokens }, sessionId);
+      await waitFor('themed', async () => {
+        const value = await cdp.evaluate(sessionId, READ);
+        return value.tier != null ? value : null;
+      }, { timeout: 15000, interval: 120 });
+      await new Promise((r) => setTimeout(r, 700));
+      const before = await cdp.evaluate(sessionId, READ);
+
+      // Through the worker, because it is the broadcast that makes the
+      // content script re-apply. Any setting will do; the bug is in the
+      // re-climb, not in what changed.
+      await sendFromExtension(
+        cdp,
+        variant.id,
+        `chrome.runtime.sendMessage({ type: 'patch-settings', patch: { brightness: 101 } })`
+      );
+      await new Promise((r) => setTimeout(r, 1500));
+      const after = await cdp.evaluate(sessionId, READ);
+
+      record(
+        after.body !== 'rgb(255, 255, 255)',
+        'stubborn re-apply: a settings change does not leave the page white',
+        `${before.body} -> ${after.body}`
+      );
+      record(
+        after.tier === before.tier,
+        'stubborn re-apply: the page lands on the same rung it was already on',
+        `tier ${before.tier} -> ${after.tier}`
+      );
+      await cdp.send('Target.closeTarget', { targetId });
+    }
+
     await setSettings(cdp, variant.id, { enabled: true, stubborn: false, mode: 'filter' });
     const pinnedFilter = await themedPage(cdp, legacy);
     record(
