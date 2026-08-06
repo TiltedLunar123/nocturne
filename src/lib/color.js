@@ -452,6 +452,23 @@
     const fn = text.slice(0, open).trim().toLowerCase();
     const body = text.slice(open + 1, -1);
 
+    /*
+     * Relative colour syntax is a derivation, not a list of components.
+     *
+     * `rgb(from var(--brand) r g b)` means "that colour, rebuilt from its own
+     * channels". Split positionally, `from` and the origin colour land in the
+     * r and g slots, every channel reads as non-numeric, and the value
+     * resolves to black. Custom properties are where it lands: the engine
+     * substitutes the var() but does not evaluate the relative form, so the
+     * token tier read a brand colour as black and then wrote that back onto
+     * :root with !important, which the site's own definition cannot outrank.
+     *
+     * Refusing it hands callers the same null they already treat as "not a
+     * colour I can reason about, leave the value alone", which is the honest
+     * answer here.
+     */
+    if (/^\s*from\b/i.test(body)) return null;
+
     // Slash-separated alpha, at top level only.
     let alphaToken = null;
     let head = body;

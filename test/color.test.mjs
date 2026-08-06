@@ -174,3 +174,42 @@ test('format emits values a browser accepts', () => {
   // Out of range input must be clamped, not emitted as rgb(300, ...).
   assert.equal(color.format([1.4, -0.2, 0]), 'rgb(255, 0, 0)');
 });
+
+test('relative colour syntax is refused rather than read as black', () => {
+  /*
+   * `rgb(from var(--brand) r g b)` is a derivation, not three components. The
+   * parser split it positionally, so `from` and the origin colour landed in
+   * the r and g slots, every channel came out non-numeric, and the whole
+   * thing resolved to black.
+   *
+   * Custom properties are where this bites: getComputedStyle substitutes the
+   * var() but does not evaluate the relative form, so the token tier read a
+   * derived brand colour as black, then wrote black back onto :root with
+   * !important, which the site's own definition cannot outrank. Every accent
+   * on the page collapsed to one dead grey.
+   *
+   * null is the answer, not a guess: it is what callers already treat as
+   * "leave this value alone".
+   */
+  for (const value of [
+    'rgb(from #2563eb r g b)',
+    'rgba(from #2563eb r g b / 50%)',
+    'hsl(from red h s l)',
+    'hwb(from red h w b)',
+    'lab(from #2563eb l a b)',
+    'lch(from #2563eb l c h)',
+    'oklab(from #2563eb l a b)',
+    'oklch(from var(--brand) l c h)',
+    'color(from #2563eb srgb r g b)',
+    'OKLCH(FROM #2563eb l c h)',
+  ]) {
+    assert.equal(color.parse(value), null, `${value} must not be parsed as a colour`);
+  }
+});
+
+test('an ordinary colour that merely starts with an f still parses', () => {
+  // The guard keys on the `from` keyword, so it must not catch a value whose
+  // first component happens to begin with those letters.
+  assert.deepEqual(bytes(color.parse('rgb(255 0 0)').rgb), [255, 0, 0]);
+  assert.deepEqual(bytes(color.parse('#f00').rgb), [255, 0, 0]);
+});
