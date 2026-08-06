@@ -83,7 +83,9 @@ method automatically and that decision is remembered.
 
 ## Install
 
-Submitted to addons.mozilla.org and awaiting review. To run it from source:
+**Firefox:** [Nocturne Dark Mode on addons.mozilla.org](https://addons.mozilla.org/firefox/addon/nocturne-dark-mode/).
+
+Not on the Chrome Web Store yet. To run it from source:
 
 ```bash
 git clone https://github.com/TiltedLunar123/nocturne.git
@@ -143,3 +145,6 @@ These are real and stated rather than hidden.
 ## Licence
 
 MIT.
+
+If it saved your eyes an evening, you can [buy me a coffee](https://buymeacoffee.com/judeh1l).
+Entirely optional, and nothing in the extension is behind it.

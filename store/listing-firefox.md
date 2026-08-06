@@ -93,6 +93,9 @@ rather than as a wall of text.
 
 - **Homepage:** `https://github.com/TiltedLunar123/nocturne`
 - **Support site:** `https://github.com/TiltedLunar123/nocturne/issues`
+- **Contributions URL:** `https://buymeacoffee.com/judeh1l`. AMO has a field for
+  this and renders it as a "Support this developer" button on the listing.
+  Buy Me a Coffee is on its allowed list of services.
 - **Privacy policy:** paste the contents of `PRIVACY.md`
 - **License:** MIT
 - **Screenshots:** reuse `store/assets/screenshot-1..5.png`. AMO takes the same

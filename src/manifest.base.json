@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Nocturne Dark Mode",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Dark mode for every site. Uses a site's own dark theme when it has one, so pages look right instead of inverted. No white flash.",
   "permissions": ["storage", "alarms", "scripting"],
   "optional_host_permissions": ["<all_urls>"],
