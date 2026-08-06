@@ -202,7 +202,12 @@
   async function toggleStubborn(wanted) {
     const note = el('stubborn-note');
     if (!wanted) {
-      await api.permissions.remove({ origins: ['<all_urls>'] }).catch(() => {});
+      // Not on Gecko, where the content script runs on this same grant and
+      // giving it back stops the extension working at all. See
+      // NX.browser.canDropHostAccess.
+      if (NX.browser.canDropHostAccess) {
+        await api.permissions.remove({ origins: ['<all_urls>'] }).catch(() => {});
+      }
       note.hidden = true;
       await save({ stubborn: false });
       return;

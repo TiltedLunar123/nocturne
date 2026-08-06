@@ -14,6 +14,27 @@
   const isFirefox =
     typeof navigator !== 'undefined' && /\bGecko\/|Firefox\//.test(navigator.userAgent || '');
 
+  /**
+   * May the optional all-sites grant be handed back?
+   *
+   * Chromium keeps two separate records: the match patterns a content script
+   * declares, and the optional host permissions the user has granted. Giving
+   * the optional one back leaves the content script exactly as it was.
+   *
+   * Gecko does not. For an MV3 extension it treats the patterns in
+   * `content_scripts` as host permissions granted at install, and those are
+   * the same `<all_urls>` the optional grant names. Removing it there takes
+   * the content script's host access with it, so guard.css and the engine
+   * stop being injected everywhere: no anti-flash shell, no ladder, no
+   * per-site state, and the popup reporting that it cannot run on any page.
+   * Nothing in the extension's own UI would explain that or undo it.
+   *
+   * So on Gecko the grant is not Nocturne's to drop, and it does not try.
+   * Turning the option off still turns the feature off, which is the whole of
+   * what that switch promises.
+   */
+  const canDropHostAccess = !isFirefox;
+
   /** Message names. Kept in one table so a typo is a missing key, not silence. */
   const MSG = {
     GET_STATE: 'get-state',
@@ -96,6 +117,7 @@
   NX.browser = {
     api,
     isFirefox,
+    canDropHostAccess,
     MSG,
     STORAGE_KEY,
     readSettings,
