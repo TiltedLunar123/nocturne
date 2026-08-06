@@ -55,6 +55,31 @@
   }
 
   /**
+   * The settings key needs that queue too, for exactly the same reason.
+   *
+   * Read, modify, write, over one storage key, from six different handlers.
+   * A page finishing its climb reaches `remember` while the popup's own write
+   * is still in flight, both having read the same snapshot, and the later
+   * write puts the earlier one's values back. That is not only a lost cache
+   * entry: a per-site switch or a palette the user just chose silently
+   * reverts, while the surface that sent it renders the reply it was handed
+   * and shows the change as applied. `broadcast` pokes every open tab at
+   * once, so on a multi-tab window the collisions are the normal case rather
+   * than the unlucky one.
+   *
+   * `mutate` gets the current settings and returns what to store, or nothing
+   * to leave them alone. The whole read-modify-write holds the queue.
+   */
+  function updateSettings(mutate) {
+    return serialise(async () => {
+      const settings = await NX.browser.readSettings();
+      const next = await mutate(settings);
+      if (!next) return settings;
+      return NX.browser.writeSettings(next);
+    });
+  }
+
+  /**
    * Read one session map, hand it to `mutate`, write it back. The whole
    * sequence holds the queue, so no other handler can interleave with it.
    */
@@ -170,9 +195,8 @@
     return (report && report.origin) || null;
   }
 
-  async function setSite(origin, patch) {
-    if (!origin) return null;
-    const settings = await NX.browser.readSettings();
+  /** Apply a per-site patch to a settings object. Pure: no reads, no writes. */
+  function withSite(settings, origin, patch) {
     const sites = { ...settings.sites };
     const next = { ...(sites[origin] || {}), ...patch };
     for (const key of Object.keys(next)) {
@@ -180,20 +204,23 @@
     }
     if (Object.keys(next).length) sites[origin] = next;
     else delete sites[origin];
-    const saved = await NX.browser.writeSettings({ ...settings, sites });
+    return { ...settings, sites };
+  }
+
+  async function setSite(origin, patch) {
+    if (!origin) return null;
+    const saved = await updateSettings((settings) => withSite(settings, origin, patch));
     await broadcast();
     return saved;
   }
 
-  async function remember(origin, tier) {
-    if (!origin) return;
-    const settings = await NX.browser.readSettings();
-    const learned = { ...settings.learned, [origin]: { tier, at: Date.now() } };
-    // Keep the cache bounded; this is an optimisation, not a record.
-    const entries = Object.entries(learned).sort((a, b) => b[1].at - a[1].at);
-    await NX.browser.writeSettings({
-      ...settings,
-      learned: Object.fromEntries(entries.slice(0, 500)),
+  function remember(origin, tier) {
+    if (!origin) return Promise.resolve();
+    return updateSettings((settings) => {
+      const learned = { ...settings.learned, [origin]: { tier, at: Date.now() } };
+      // Keep the cache bounded; this is an optimisation, not a record.
+      const entries = Object.entries(learned).sort((a, b) => b[1].at - a[1].at);
+      return { ...settings, learned: Object.fromEntries(entries.slice(0, 500)) };
     });
   }
 
@@ -263,11 +290,10 @@
         (async () => {
           // Read, then merge, then write. The patch is the only thing the
           // sender is entitled to an opinion about.
-          const current = await NX.browser.readSettings();
-          const saved = await NX.browser.writeSettings({
+          const saved = await updateSettings((current) => ({
             ...current,
             ...(message.patch && typeof message.patch === 'object' ? message.patch : {}),
-          });
+          }));
           await syncAlarm();
           await broadcast();
           sendResponse({ settings: saved });
@@ -283,12 +309,13 @@
 
       case MSG.RESET_SITE:
         (async () => {
-          const settings = await NX.browser.readSettings();
-          const sites = { ...settings.sites };
-          const learned = { ...settings.learned };
-          delete sites[message.origin];
-          delete learned[message.origin];
-          const saved = await NX.browser.writeSettings({ ...settings, sites, learned });
+          const saved = await updateSettings((settings) => {
+            const sites = { ...settings.sites };
+            const learned = { ...settings.learned };
+            delete sites[message.origin];
+            delete learned[message.origin];
+            return { ...settings, sites, learned };
+          });
           await broadcast();
           sendResponse({ settings: saved });
         })();
@@ -383,24 +410,26 @@
     api.commands.onCommand.addListener(async (command) => {
       const [tab] = await api.tabs.query({ active: true, currentWindow: true });
       if (command === 'toggle-global') {
-        const settings = await NX.browser.readSettings();
-        await NX.browser.writeSettings({ ...settings, enabled: !settings.enabled });
+        await updateSettings((settings) => ({ ...settings, enabled: !settings.enabled }));
         await broadcast();
         return;
       }
       if (command === 'toggle-site' && tab) {
         const origin = await originForTab(tab.id);
         if (!origin) return;
-        const settings = await NX.browser.readSettings();
-        const current = settings.sites[origin] || {};
-        await setSite(origin, { enabled: current.enabled === false });
+        // Read the current value inside the queue, so the flip is against
+        // what is stored now rather than a snapshot taken before it.
+        await updateSettings((settings) =>
+          withSite(settings, origin, { enabled: (settings.sites[origin] || {}).enabled === false })
+        );
+        await broadcast();
       }
     });
   }
 
   api.runtime.onInstalled.addListener(async () => {
     // Normalises whatever an older version wrote, and seeds first-run defaults.
-    await NX.browser.writeSettings(await NX.browser.readSettings());
+    await updateSettings((settings) => settings);
     await broadcast();
   });
 })(typeof self !== 'undefined' ? self : globalThis);

@@ -178,6 +178,21 @@ function post(listeners, message, sender = {}) {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 
+/**
+ * Wait for a fire-and-forget handler to land.
+ *
+ * Some messages are answered with `undefined` on purpose, so there is nothing
+ * to await, and settings writes now hold a queue rather than overlapping. A
+ * fixed sleep long enough for the slow case would be flaky on the fast one.
+ */
+async function waitFor(check, what) {
+  for (let i = 0; i < 100; i++) {
+    if (await check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`timed out waiting for ${what}`);
+}
+
 test('the toolbar reflects the origin a tab reported, because tab.url is never readable', async () => {
   const { NX, api, calls, listeners } = loadWorker();
   const { MSG } = NX.browser;
@@ -433,5 +448,73 @@ test('an embedded frame cannot tell the worker what rung the tab settled on', as
     Object.keys(stored.learned),
     [],
     'only the top frame speaks for the tab, the same rule TAB_STATE already follows'
+  );
+});
+
+test('a page finishing its climb does not revert a setting the user just changed', async () => {
+  const { NX, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+
+  /*
+   * Both handlers are a read-modify-write over the single settings key, and
+   * `broadcast` pokes every open tab at once, so a content script reaches
+   * `remember` while the popup's own write is still in flight. Whichever read
+   * first is working from a snapshot taken before the other wrote, so the
+   * later write puts the older values back.
+   */
+  await Promise.all([
+    post(listeners, { type: MSG.PATCH_SETTINGS, patch: { enabled: false, palette: 'carbon' } }),
+    post(listeners, { type: MSG.LEARNED, origin: 'other.example', tier: 3 }, { tab: { id: 1 } }),
+  ]);
+  await waitFor(async () => {
+    const seen = await NX.browser.readSettings();
+    return !!seen.learned['other.example'];
+  }, 'the learned rung to be written');
+
+  const stored = await NX.browser.readSettings();
+  assert.equal(stored.enabled, false, 'the switch the user just turned off must stay off');
+  assert.equal(stored.palette, 'carbon', 'the palette the user just picked must survive');
+});
+
+test('a per-site override survives a learned rung written in the same turn', async () => {
+  const { NX, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+
+  await Promise.all([
+    post(listeners, { type: MSG.SET_SITE, origin: 'a.example', patch: { enabled: false } }),
+    post(listeners, { type: MSG.LEARNED, origin: 'b.example', tier: 2 }, { tab: { id: 1 } }),
+  ]);
+  await waitFor(async () => {
+    const seen = await NX.browser.readSettings();
+    return !!seen.learned['b.example'];
+  }, 'the learned rung to be written');
+
+  const stored = await NX.browser.readSettings();
+  assert.equal(
+    stored.sites['a.example'] && stored.sites['a.example'].enabled,
+    false,
+    'the per-site switch is a user setting, not a cache, and must not be dropped'
+  );
+});
+
+test('several tabs reporting a rung at once keep all of them', async () => {
+  const { NX, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+
+  await Promise.all(
+    ['one.example', 'two.example', 'three.example'].map((origin, i) =>
+      post(listeners, { type: MSG.LEARNED, origin, tier: 3 }, { tab: { id: i + 1 } })
+    )
+  );
+  await waitFor(async () => {
+    const seen = await NX.browser.readSettings();
+    return Object.keys(seen.learned).length >= 3;
+  }, 'three learned rungs to be written');
+
+  const stored = await NX.browser.readSettings();
+  assert.deepEqual(
+    Object.keys(stored.learned).sort(),
+    ['one.example', 'three.example', 'two.example'],
+    'every tab that reported a rung must be remembered, not just the last writer'
   );
 });
