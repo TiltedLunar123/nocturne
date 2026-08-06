@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.1
 
 - On sites using the stubborn sites option, content that appears after the page
   has loaded is themed like the rest of it. Anything the page painted later,
