@@ -8,85 +8,22 @@
  */
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 import test from 'node:test';
-import vm from 'node:vm';
 
-import { ROOT } from './helpers.mjs';
+import { loadPage } from './helpers.mjs';
 
-const MODULES = ['lib/color.js', 'lib/theme.js', 'lib/settings.js', 'lib/browser.js'];
+const IDS = [
+  'clock-row', 'enabled', 'export', 'palettes', 'preview', 'reset-all',
+  'schedule-from', 'schedule-kind', 'schedule-to', 'sites', 'sites-empty',
+  'stubborn', 'stubborn-note', 'version', 'brightness', 'contrast',
+  'saturation', 'minContrast', 'dimImages', 'brightness-out', 'contrast-out',
+  'saturation-out', 'minContrast-out', 'dimImages-out',
+];
 
 const FIREFOX_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0';
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
-
-/** Just enough DOM for the settings page: ids, events, and text. */
-function makeDom() {
-  const byId = new Map();
-
-  function makeEl(id) {
-    const listeners = {};
-    const el = {
-      id: id || '',
-      children: [],
-      style: {},
-      dataset: {},
-      className: '',
-      textContent: '',
-      innerHTML: '',
-      hidden: false,
-      checked: false,
-      value: '',
-      type: '',
-      href: '',
-      download: '',
-      setAttribute() {},
-      removeAttribute() {},
-      appendChild(child) {
-        el.children.push(child);
-        return child;
-      },
-      append(...kids) {
-        el.children.push(...kids);
-      },
-      querySelector() {
-        return null;
-      },
-      querySelectorAll() {
-        return [];
-      },
-      click() {},
-      addEventListener(type, fn) {
-        (listeners[type] = listeners[type] || []).push(fn);
-      },
-      /** Deliver an event the way a click or a keystroke would. */
-      fire(type, event = {}) {
-        const detail = { target: el, ...event };
-        return Promise.all((listeners[type] || []).map((fn) => fn(detail)));
-      },
-      listeners,
-    };
-    return el;
-  }
-
-  const IDS = [
-    'clock-row', 'enabled', 'export', 'palettes', 'preview', 'reset-all',
-    'schedule-from', 'schedule-kind', 'schedule-to', 'sites', 'sites-empty',
-    'stubborn', 'stubborn-note', 'version', 'brightness', 'contrast',
-    'saturation', 'minContrast', 'dimImages', 'brightness-out', 'contrast-out',
-    'saturation-out', 'minContrast-out', 'dimImages-out',
-  ];
-  for (const id of IDS) byId.set(id, makeEl(id));
-
-  const document = {
-    getElementById: (id) => byId.get(id) || null,
-    createElement: () => makeEl(''),
-    querySelectorAll: () => [],
-  };
-  return { document, byId };
-}
 
 /**
  * Load the real options page over the stub, on a chosen engine.
@@ -95,7 +32,6 @@ function makeDom() {
  * this file asserts is which calls the page decides to make.
  */
 function loadOptions({ userAgent, stubborn = true }) {
-  const { document, byId } = makeDom();
   const calls = { request: [], remove: [], patches: [] };
 
   /*
@@ -135,33 +71,18 @@ function loadOptions({ userAgent, stubborn = true }) {
     },
   };
 
-  const sandbox = {
-    console: { log() {}, warn() {}, error() {} },
-    Math, JSON, Object, Array, String, Number, Boolean, Date, Promise, Error,
-    setTimeout,
-    document,
-    navigator: { userAgent },
-    chrome: api,
-    confirm: () => true,
-    Blob: class {},
-    URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} },
-  };
-  sandbox.self = sandbox;
-  sandbox.globalThis = sandbox;
-  vm.createContext(sandbox);
+  const { byId, NX } = loadPage('options/options.js', {
+    ids: IDS,
+    globals: {
+      chrome: api,
+      navigator: { userAgent },
+      confirm: () => true,
+      Blob: class {},
+      URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} },
+    },
+  });
 
-  for (const rel of MODULES) {
-    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src', rel), 'utf8'), sandbox, {
-      filename: rel,
-    });
-  }
-  vm.runInContext(
-    fs.readFileSync(path.join(ROOT, 'src', 'options', 'options.js'), 'utf8'),
-    sandbox,
-    { filename: 'options/options.js' }
-  );
-
-  return { byId, calls, NX: sandbox.NX };
+  return { byId, calls, NX };
 }
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
