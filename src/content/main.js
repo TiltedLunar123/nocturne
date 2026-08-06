@@ -28,6 +28,8 @@
     stopRootWatch: null,
     started: false,
     ready: false,
+    announced: false,
+    mirrored: false,
   };
 
   const root = () => document.documentElement;
@@ -67,6 +69,7 @@
      * it, so only the top frame withdraws it.
      */
     if (isTopFrame()) NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+    state.mirrored = false;
     state.tier = TIER.OFF;
     state.ready = false;
   }
@@ -241,6 +244,7 @@
     if (!isTopFrame()) return;
     if (!ctx.stubborn || (outcome && outcome.untouched)) {
       NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+      state.mirrored = false;
       return;
     }
     const css = Array.from(NX.sheet.elements.values())
@@ -249,6 +253,30 @@
     NX.browser.send(
       css.trim() ? { type: MSG.APPLY_USER_CSS, css } : { type: MSG.CLEAR_USER_CSS }
     );
+    state.mirrored = !!css.trim();
+  }
+
+  /**
+   * Take the USER-origin mirror off the page and wait until it is really off.
+   *
+   * Nothing may measure the page while it is up. The mirror is a copy of
+   * Nocturne's own rules at the one origin a content script cannot suspend:
+   * `sheet.withoutOurs` flips `media` on the sheets this document owns, and
+   * the mirror is not one of them, it was inserted by the worker. So a second
+   * climb reads Nocturne's own colours, decides the page is already dark,
+   * declares the page untouched, and then withdraws the mirror it just
+   * measured. The page ends up fully light while the popup reports it as
+   * using the site's own dark theme.
+   *
+   * Removal is a round trip through the worker, so the blunt half of guard.css
+   * goes back up for the duration rather than leaving the page bare.
+   */
+  async function dropMirror() {
+    if (!isTopFrame() || !state.mirrored) return;
+    state.ready = false;
+    root().removeAttribute('data-nocturne-ready');
+    await NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+    state.mirrored = false;
   }
 
   /**
@@ -310,8 +338,18 @@
     syncUserCss(ctx, { tier: TIER.FILTER });
   }
 
+  /**
+   * Report the rung this origin settled on, so the next visit can start there.
+   *
+   * Top frame only, like `announce` and `syncUserCss`. A subframe's document
+   * has none of the embedding page's stylesheets, so it falls to the compute
+   * rung on a site whose own dark theme works perfectly, and the rung is
+   * stored against the origin rather than the frame. The worker guards this
+   * too; both ends, because either one alone is a silent single point of
+   * failure for the product's headline claim.
+   */
   function remember(ctx, tier, reason) {
-    if (!state.origin) return;
+    if (!state.origin || !isTopFrame()) return;
     NX.browser.send({ type: MSG.LEARNED, origin: state.origin, tier, reason: reason || '' });
   }
 
@@ -340,10 +378,20 @@
    */
   function announce(ctx) {
     if (!isTopFrame()) return;
+    /*
+     * `fresh` is true only on this document's first report. A content script
+     * boots once per document, so it is the one honest signal the worker has
+     * that the previous document in this tab is gone and anything it inserted
+     * went with it. Every later report comes from a re-apply, where the sheet
+     * the worker is holding a record of is still very much on the page.
+     */
+    const fresh = !state.announced;
+    state.announced = true;
     NX.browser.send({
       type: MSG.TAB_STATE,
       origin: state.origin,
       active: !!(ctx && ctx.active),
+      fresh,
     });
   }
 
@@ -367,6 +415,9 @@
     NX.observe.stop();
     NX.sheet.clearAll();
     NX.tiers.clearCompute();
+    // Before anything measures the page, and after clearAll, which cannot
+    // reach a sheet this document does not own.
+    await dropMirror();
     if (state.undoSignal) {
       state.undoSignal();
       state.undoSignal = null;

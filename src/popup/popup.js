@@ -110,7 +110,18 @@
     refreshStatus();
   }
 
+  /*
+   * Two status refreshes can be in flight at once: render() starts one when
+   * the popup opens, and every click starts another. Without a rule about
+   * which one may write, the reply to the older request lands last and wins,
+   * so the popup describes the state from before the click and keeps
+   * describing it until it is closed and reopened. The token is checked after
+   * the await, which is the only place the ordering can have changed.
+   */
+  let statusRequest = 0;
+
   async function refreshStatus() {
+    const request = ++statusRequest;
     const status = el('status');
     if (!state.origin) {
       status.dataset.quality = 'off';
@@ -126,6 +137,7 @@
     const report = state.tabId
       ? await NX.browser.sendToFrame(state.tabId, 0, { type: MSG.GET_STATE })
       : null;
+    if (request !== statusRequest) return;
     if (!report || report.tier == null) {
       status.dataset.quality = 'off';
       status.textContent = 'Reload the page to theme it';

@@ -119,7 +119,15 @@
   /**
    * Remove the colour-scheme clause and keep every other condition, so
    * `(min-width: 40em) and (prefers-color-scheme: dark)` still only applies
-   * above 40em. Returns null when the branch does not mention dark at all.
+   * above 40em. Returns null when the branch is not one we can promote.
+   *
+   * A media query is an optional `only`/`not` plus a media type, and then any
+   * number of feature clauses joined by `and`. Only the feature clauses are
+   * joined that way: `only screen` is two tokens of one media-type clause,
+   * and rebuilding it as `only and screen` is not a valid query, so the
+   * engine rewrites the whole condition to `not all` and the block matches
+   * nothing. That idiom is still common enough that it was silently costing
+   * those sites their own dark theme and dropping them to the compute sweep.
    */
   function stripColorScheme(condition) {
     if (!/prefers-color-scheme\s*:\s*dark/i.test(condition)) return null;
@@ -142,8 +150,24 @@
       current += ch;
     }
     push();
-    const kept = clauses.filter((c) => !/prefers-color-scheme\s*:\s*dark/i.test(c));
-    return kept.join(' and ');
+
+    // The media-type run is however many leading tokens are not parenthesised.
+    let split = 0;
+    while (split < clauses.length && !clauses[split].startsWith('(')) split++;
+    const type = clauses.slice(0, split);
+
+    /*
+     * `not screen and (prefers-color-scheme: dark)` negates the whole query,
+     * so it applies when the page is NOT on a dark screen: it describes the
+     * light theme, not the dark one. There is no rewrite that keeps that
+     * meaning while dropping the clause, so leave the branch alone.
+     */
+    if (type.length && /^not$/i.test(type[0])) return null;
+
+    const kept = clauses
+      .slice(split)
+      .filter((c) => !/prefers-color-scheme\s*:\s*dark/i.test(c));
+    return [type.join(' '), ...kept].filter(Boolean).join(' and ');
   }
 
   /**

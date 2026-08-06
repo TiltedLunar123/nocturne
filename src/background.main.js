@@ -55,6 +55,31 @@
   }
 
   /**
+   * The settings key needs that queue too, for exactly the same reason.
+   *
+   * Read, modify, write, over one storage key, from six different handlers.
+   * A page finishing its climb reaches `remember` while the popup's own write
+   * is still in flight, both having read the same snapshot, and the later
+   * write puts the earlier one's values back. That is not only a lost cache
+   * entry: a per-site switch or a palette the user just chose silently
+   * reverts, while the surface that sent it renders the reply it was handed
+   * and shows the change as applied. `broadcast` pokes every open tab at
+   * once, so on a multi-tab window the collisions are the normal case rather
+   * than the unlucky one.
+   *
+   * `mutate` gets the current settings and returns what to store, or nothing
+   * to leave them alone. The whole read-modify-write holds the queue.
+   */
+  function updateSettings(mutate) {
+    return serialise(async () => {
+      const settings = await NX.browser.readSettings();
+      const next = await mutate(settings);
+      if (!next) return settings;
+      return NX.browser.writeSettings(next);
+    });
+  }
+
+  /**
    * Read one session map, hand it to `mutate`, write it back. The whole
    * sequence holds the queue, so no other handler can interleave with it.
    */
@@ -129,8 +154,15 @@
     }
   }
 
-  async function noteTabState(tabId, origin, active) {
+  async function noteTabState(tabId, origin, active, fresh) {
     if (!tabId) return;
+    /*
+     * A content script only ever boots into a document that has just been
+     * created, so `fresh` is the one trustworthy signal that the previous
+     * document in this tab is gone. Anything inserted into it went with it,
+     * and the recorded CSS text is now only a stale key.
+     */
+    if (fresh) await forgetUserCss(tabId);
     await updateSession(TAB_STATE_KEY, (map) => {
       map[String(tabId)] = { origin: origin || null, active: !!active };
     });
@@ -170,9 +202,8 @@
     return (report && report.origin) || null;
   }
 
-  async function setSite(origin, patch) {
-    if (!origin) return null;
-    const settings = await NX.browser.readSettings();
+  /** Apply a per-site patch to a settings object. Pure: no reads, no writes. */
+  function withSite(settings, origin, patch) {
     const sites = { ...settings.sites };
     const next = { ...(sites[origin] || {}), ...patch };
     for (const key of Object.keys(next)) {
@@ -180,20 +211,23 @@
     }
     if (Object.keys(next).length) sites[origin] = next;
     else delete sites[origin];
-    const saved = await NX.browser.writeSettings({ ...settings, sites });
+    return { ...settings, sites };
+  }
+
+  async function setSite(origin, patch) {
+    if (!origin) return null;
+    const saved = await updateSettings((settings) => withSite(settings, origin, patch));
     await broadcast();
     return saved;
   }
 
-  async function remember(origin, tier) {
-    if (!origin) return;
-    const settings = await NX.browser.readSettings();
-    const learned = { ...settings.learned, [origin]: { tier, at: Date.now() } };
-    // Keep the cache bounded; this is an optimisation, not a record.
-    const entries = Object.entries(learned).sort((a, b) => b[1].at - a[1].at);
-    await NX.browser.writeSettings({
-      ...settings,
-      learned: Object.fromEntries(entries.slice(0, 500)),
+  function remember(origin, tier) {
+    if (!origin) return Promise.resolve();
+    return updateSettings((settings) => {
+      const learned = { ...settings.learned, [origin]: { tier, at: Date.now() } };
+      // Keep the cache bounded; this is an optimisation, not a record.
+      const entries = Object.entries(learned).sort((a, b) => b[1].at - a[1].at);
+      return { ...settings, learned: Object.fromEntries(entries.slice(0, 500)) };
     });
   }
 
@@ -263,11 +297,10 @@
         (async () => {
           // Read, then merge, then write. The patch is the only thing the
           // sender is entitled to an opinion about.
-          const current = await NX.browser.readSettings();
-          const saved = await NX.browser.writeSettings({
+          const saved = await updateSettings((current) => ({
             ...current,
             ...(message.patch && typeof message.patch === 'object' ? message.patch : {}),
-          });
+          }));
           await syncAlarm();
           await broadcast();
           sendResponse({ settings: saved });
@@ -283,23 +316,36 @@
 
       case MSG.RESET_SITE:
         (async () => {
-          const settings = await NX.browser.readSettings();
-          const sites = { ...settings.sites };
-          const learned = { ...settings.learned };
-          delete sites[message.origin];
-          delete learned[message.origin];
-          const saved = await NX.browser.writeSettings({ ...settings, sites, learned });
+          const saved = await updateSettings((settings) => {
+            const sites = { ...settings.sites };
+            const learned = { ...settings.learned };
+            delete sites[message.origin];
+            delete learned[message.origin];
+            return { ...settings, sites, learned };
+          });
           await broadcast();
           sendResponse({ settings: saved });
         })();
         return true;
 
+      /*
+       * The learned rung describes the tab, so only the tab may report it.
+       *
+       * It is keyed by origin and it sets the rung the NEXT visit starts on,
+       * skipping every cheaper rung below it. A subframe has its own document
+       * with none of the embedding page's stylesheets, so it settles on the
+       * compute rung and, left unguarded, teaches the worker that the site
+       * needs a generated theme. The site's own dark theme is then never
+       * tried again. A cross-origin embed does it to an origin the user never
+       * chose to visit that way. Same rule as TAB_STATE and the user-CSS
+       * upgrade, which have been guarded since the last sweep.
+       */
       case MSG.LEARNED:
-        remember(message.origin, message.tier);
+        if (speaksForTab) remember(message.origin, message.tier);
         return undefined;
 
       case MSG.TAB_STATE:
-        if (speaksForTab) noteTabState(tabId, message.origin, message.active);
+        if (speaksForTab) noteTabState(tabId, message.origin, message.active, message.fresh);
         return undefined;
 
       case MSG.APPLY_USER_CSS:
@@ -320,13 +366,22 @@
   });
 
   api.tabs.onUpdated.addListener((tabId, info) => {
-    // A navigation discards the document, and with it any inserted CSS and any
-    // claim the old page made about where it was. The recorded CSS text would
-    // only ever be a stale key for a removeCSS that has nothing left to remove.
-    if (info.status === 'loading') {
-      forgetUserCss(tabId);
-      forgetTabState(tabId);
-    }
+    /*
+     * `status: 'loading'` does not mean the document is being replaced.
+     *
+     * Clicking an in-page anchor, or any SPA calling history.pushState, fires
+     * it while the same document stays on screen. Dropping the recorded CSS
+     * text there threw away the only key removeCSS can be called with, so the
+     * USER-origin sheet became unremovable: the page stayed themed, above
+     * everything the page or the content script could write, and standing
+     * Nocturne down could not take it off again.
+     *
+     * Only a content script reporting that it has just booted proves the old
+     * document is gone, so that is what discards the record now. The tab's
+     * own state is different: it is what paints the toolbar, and a stale icon
+     * during a navigation is worse than none.
+     */
+    if (info.status === 'loading') forgetTabState(tabId);
     if (info.status === 'complete') refreshIcon(tabId);
   });
   api.tabs.onActivated.addListener(({ tabId }) => refreshIcon(tabId));
@@ -371,24 +426,26 @@
     api.commands.onCommand.addListener(async (command) => {
       const [tab] = await api.tabs.query({ active: true, currentWindow: true });
       if (command === 'toggle-global') {
-        const settings = await NX.browser.readSettings();
-        await NX.browser.writeSettings({ ...settings, enabled: !settings.enabled });
+        await updateSettings((settings) => ({ ...settings, enabled: !settings.enabled }));
         await broadcast();
         return;
       }
       if (command === 'toggle-site' && tab) {
         const origin = await originForTab(tab.id);
         if (!origin) return;
-        const settings = await NX.browser.readSettings();
-        const current = settings.sites[origin] || {};
-        await setSite(origin, { enabled: current.enabled === false });
+        // Read the current value inside the queue, so the flip is against
+        // what is stored now rather than a snapshot taken before it.
+        await updateSettings((settings) =>
+          withSite(settings, origin, { enabled: (settings.sites[origin] || {}).enabled === false })
+        );
+        await broadcast();
       }
     });
   }
 
   api.runtime.onInstalled.addListener(async () => {
     // Normalises whatever an older version wrote, and seeds first-run defaults.
-    await NX.browser.writeSettings(await NX.browser.readSettings());
+    await updateSettings((settings) => settings);
     await broadcast();
   });
 })(typeof self !== 'undefined' ? self : globalThis);

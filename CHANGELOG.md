@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.2.0
+
+More bug fixes, two of which meant whole categories of site were themed the
+expensive way when they did not need to be.
+
+- Turning "stubborn sites" back off no longer switches Nocturne off entirely
+  on Firefox. Unticking it gave back the permission the extension's own
+  content script runs on, so from the next page load there was no dark mode
+  anywhere, no way to tell why, and no way to put it back except from
+  Firefox's own add-ons page.
+- A site's own dark theme is used on sites whose stylesheets write the older
+  `only screen and (prefers-color-scheme: dark)` form. Nocturne rebuilt that
+  query wrongly, the rewritten block matched nothing, and the page fell all
+  the way to a generated theme.
+- An embedded frame can no longer decide how the page around it gets themed.
+  A widget or advert with no dark theme of its own taught Nocturne that the
+  whole site needed a generated one, so the site's real dark theme was never
+  tried again. A frame from another site could do it to a site you had never
+  opened directly.
+- Settings stay where you put them. A page finishing its work in another tab
+  could quietly put back the palette, the per-site switch or the main switch
+  you had just changed, while the popup went on showing the new value.
+- Sites that build their colours with newer CSS are themed properly instead
+  of being turned grey. Colours written as a derivation of another colour
+  were read as black and then forced onto the page.
+- Moving a slider no longer turns a page white on sites using the stubborn
+  sites option.
+- Clicking a link within a page no longer leaves the stubborn sites
+  stylesheet welded to it, where nothing could override it and turning
+  Nocturne off could not remove it.
+- The popup no longer goes back to describing a site the way it was before
+  you changed it.
+- A link to buy me a coffee, in the popup footer and on the settings page.
+  Optional, and nothing in Nocturne is behind it.
+
 ## 1.1.0
 
 Bug fixes throughout, several of them to things that never worked in 1.0.0.

@@ -45,7 +45,12 @@ const PAGES = [
       modes: document.querySelectorAll('#modes .mode').length,
       sliders: document.querySelectorAll('input[type=range]').length,
       status: document.getElementById('status').textContent.trim(),
-      swatchPainted: getComputedStyle(document.querySelector('#palettes .chip')).backgroundImage !== 'none'
+      swatchPainted: getComputedStyle(document.querySelector('#palettes .chip')).backgroundImage !== 'none',
+      support: (document.querySelector('.foot a[href*="buymeacoffee"]') || {}).textContent,
+      footOverflow: (() => {
+        const foot = document.querySelector('.foot');
+        return foot.scrollWidth - foot.clientWidth;
+      })()
     })` },
   { name: 'options', url: 'options/options.html', width: 820, height: 1500, probe: `({
       palettes: document.querySelectorAll('#palettes .swatch').length,
@@ -166,6 +171,18 @@ async function main() {
         record(probe.modes === 4, 'popup: all four methods offered', `${probe.modes}`);
         record(!!probe.status, 'popup: status line has text', probe.status);
         record(probe.swatchPainted, 'popup: palette swatches painted by the real transform');
+        record(
+          probe.support === 'Buy me a coffee',
+          'popup: the support link is present in the footer',
+          probe.support
+        );
+        // The popup is a fixed 320px, so a third footer link is the kind of
+        // thing that quietly pushes the row into a scrollbar.
+        record(
+          probe.footOverflow <= 0,
+          'popup: the footer still fits the 320px width',
+          `overflow ${probe.footOverflow}px`
+        );
       } else {
         record(probe.previewFilled > 0, 'options: preview rendered', `${probe.previewFilled} nodes`);
         record(
