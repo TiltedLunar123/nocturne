@@ -254,6 +254,11 @@ input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--accent);
 .colophon a { color: var(--muted); }
 .colophon a:hover { color: var(--ink); }
 
+.colophon-links {
+  display: flex;
+  gap: 16px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
