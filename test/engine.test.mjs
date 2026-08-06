@@ -37,6 +37,34 @@ test('the colour-scheme clause is removed and the rest is kept', () => {
   );
 });
 
+test('the media type survives the rewrite as a media type', () => {
+  /*
+   * `only screen and (prefers-color-scheme: dark)` is the legacy idiom and it
+   * is still everywhere. Joining every surviving token with ' and ' turned it
+   * into `only and screen`, which is not a valid query, so the browser
+   * rewrote the whole condition to `not all` and the promoted block matched
+   * nothing. The site's own dark theme was then measured as having failed and
+   * the page fell all the way to the compute sweep.
+   */
+  assert.equal(
+    tiers.stripColorScheme('only screen and (prefers-color-scheme: dark)'),
+    'only screen'
+  );
+  assert.equal(
+    tiers.stripColorScheme('only screen and (min-width:40em) and (prefers-color-scheme:dark)'),
+    'only screen and (min-width:40em)'
+  );
+});
+
+test('a negated query is left alone rather than rewritten', () => {
+  // `not screen and (prefers-color-scheme: dark)` applies when the page is
+  // NOT on a dark screen, so it describes the light theme. Promoting it would
+  // apply the light rules unconditionally, and there is no way to rewrite the
+  // negation that preserves the author's meaning.
+  assert.equal(tiers.stripColorScheme('not screen and (prefers-color-scheme: dark)'), null);
+  assert.equal(tiers.stripColorScheme('not all and (prefers-color-scheme: dark)'), null);
+});
+
 test('a branch with no dark preference is not promoted', () => {
   assert.equal(tiers.stripColorScheme('(min-width: 40em)'), null);
   assert.equal(tiers.stripColorScheme('print'), null);
