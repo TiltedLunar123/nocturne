@@ -261,6 +261,113 @@ test('emitted CSS has no unbalanced braces', () => {
   assert.equal((css.match(/{/g) || []).length, (css.match(/}/g) || []).length);
 });
 
+// --- reading the page back -------------------------------------------------
+
+/**
+ * A page stubbed down to what the read phase actually touches: elements that
+ * carry their own computed colours, and the two collaborators tiers.js reaches
+ * for while reading. `mirror` is the flag under test, so the caller drives it.
+ */
+function stubPage() {
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/tiers'], {
+    document: { styleSheets: [], querySelectorAll: () => [] },
+    getComputedStyle: (el) => el.computed,
+    SVGElement: class {},
+  });
+  const written = [];
+  let mirror = false;
+
+  NX.sheet = {
+    isOurs: () => false,
+    withoutOurs: (ids, fn) => fn(),
+    set: (id, css) => written.push(css),
+    remove: () => {},
+    mirrorLive: () => mirror,
+  };
+  NX.probe = { withoutGuard: (fn) => fn() };
+
+  return {
+    tiers: NX.tiers,
+    written,
+    setMirror: (live) => {
+      mirror = live;
+    },
+    /** One element, optionally already carrying a tag from an earlier sweep. */
+    element: (color, background, tag) => ({
+      tagName: 'DIV',
+      nodeType: 1,
+      isConnected: true,
+      computed: {
+        color,
+        backgroundColor: background,
+        borderTopColor: '',
+        borderRightColor: '',
+        borderBottomColor: '',
+        borderLeftColor: '',
+        outlineColor: '',
+        boxShadow: 'none',
+        backgroundImage: 'none',
+        fill: '',
+        stroke: '',
+      },
+      attrs: tag == null ? {} : { 'data-nx': tag },
+      getAttribute(name) {
+        return name in this.attrs ? this.attrs[name] : null;
+      },
+      setAttribute(name, value) {
+        this.attrs[name] = value;
+      },
+      hasAttribute(name) {
+        return name in this.attrs;
+      },
+    }),
+  };
+}
+
+test('an element the user-origin mirror already paints is not read again', () => {
+  /*
+   * The mirror is a copy of our own rules at the one origin this document
+   * cannot suspend: sheet.withoutOurs flips `media`, and the worker inserted
+   * that sheet rather than this document. So while it is up, a tagged element
+   * computes to the colour Nocturne gave it, and mapping that a second time
+   * walks the surface up the ramp until a card and the page behind it meet.
+   */
+  const page = stubPage();
+  page.setMirror(true);
+
+  const themed = page.element('rgb(198, 204, 211)', 'rgb(15, 19, 24)', '7');
+  assert.equal(page.tiers.computeOn([themed], t), null);
+  assert.equal(themed.getAttribute('data-nx'), '7', 'the tag it already had must survive');
+  assert.deepEqual(page.written, [], 'and nothing new to write');
+});
+
+test('content that has never been swept is still read while the mirror is up', () => {
+  // The whole point of the skip above is that it is exact: `[data-nx]` is the
+  // only hook the mirror's compute rules have, so an untagged element reads
+  // the page's own colours exactly as it would on the first climb. Anything
+  // painted after hydration arrives this way, and on a stubborn site it is the
+  // only content that can still be themed.
+  const page = stubPage();
+  page.setMirror(true);
+
+  const late = page.element('rgb(5, 5, 5)', 'rgb(253, 253, 253)');
+  assert.equal(page.tiers.computeOn([late], t).elements, 1);
+  assert.equal(late.getAttribute('data-nx'), '0');
+  assert.equal(page.written.length, 1, 'the sheet has to grow for the mirror to carry it');
+  assert.ok(page.written[0].includes('[data-nx="0"]'), page.written[0]);
+});
+
+test('with no mirror up, a tagged element is read again', () => {
+  // Without the mirror there is nothing unsuspendable left, so re-reading is
+  // both safe and wanted: it is what re-themes a page that recolours itself.
+  const page = stubPage();
+  page.setMirror(false);
+
+  const themed = page.element('rgb(0, 0, 0)', 'rgb(255, 255, 255)', '7');
+  assert.equal(page.tiers.computeOn([themed], t).elements, 1);
+  assert.equal(themed.getAttribute('data-nx'), '0', 're-tagged against the live index');
+});
+
 // --- site signals ----------------------------------------------------------
 
 test('framework dark-theme conventions are detected from selector text', () => {

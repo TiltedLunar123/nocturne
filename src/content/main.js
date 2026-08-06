@@ -30,12 +30,28 @@
     ready: false,
     announced: false,
     mirrored: false,
+    // The exact text last handed to the worker, so an unchanged mirror is not
+    // torn down and rebuilt. null until the first sync, which is not the same
+    // as the empty string: that one means "cleared, and the worker knows".
+    mirrorCss: null,
   };
 
   const root = () => document.documentElement;
 
   const now = () =>
     typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+
+  /**
+   * The mirror's liveness is not only ours to know.
+   *
+   * Anything that reads the page back has to know a copy of our own rules is
+   * up at an origin it cannot suspend, and the readers live in sheet.js and
+   * tiers.js. Recorded in both places from here, so there is one writer.
+   */
+  function setMirrored(live) {
+    state.mirrored = live;
+    NX.sheet.noteMirror(live);
+  }
 
   function markReady() {
     if (state.ready) return;
@@ -68,8 +84,11 @@
      * Nocturne reports itself switched off. Only the top frame ever asked for
      * it, so only the top frame withdraws it.
      */
-    if (isTopFrame()) NX.browser.send({ type: MSG.CLEAR_USER_CSS });
-    state.mirrored = false;
+    if (isTopFrame()) {
+      NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+      state.mirrorCss = '';
+    }
+    setMirrored(false);
     state.tier = TIER.OFF;
     state.ready = false;
   }
@@ -217,6 +236,23 @@
       if (batch && batch.length) NX.tiers.computeOn(batch, ctx);
       else NX.tiers.tryCompute(ctx);
     });
+    /*
+     * The compute sheet just grew, so the mirror is a sweep behind.
+     *
+     * It has to be caught up here for the same reason it is caught up after a
+     * demotion: the mirror is not an extra, it is the only origin that beats a
+     * page's own inline `!important`, and stubborn mode is only ever on for
+     * pages that use one. Left at whatever the first climb wrote, every node
+     * added since had its colours in author origin alone, which on those pages
+     * is the origin that loses. The result was a themed page with light holes
+     * in it wherever anything had been painted after load, which on a modern
+     * application is most of it.
+     *
+     * Inside the budget on purpose: building the text walks every sheet, and a
+     * page that makes that expensive should be demoted for it like any other
+     * cost this function incurs.
+     */
+    syncUserCss(ctx);
     const cost = now() - started;
     if (cost > RESCAN_BUDGET_MS * 4) demote(ctx, `rescan:${Math.round(cost)}ms`);
   }
@@ -242,18 +278,30 @@
      * it. Stubborn mode never reached subframes anyway, so nothing is lost.
      */
     if (!isTopFrame()) return;
-    if (!ctx.stubborn || (outcome && outcome.untouched)) {
-      NX.browser.send({ type: MSG.CLEAR_USER_CSS });
-      state.mirrored = false;
-      return;
-    }
-    const css = Array.from(NX.sheet.elements.values())
-      .map((el) => el.textContent)
-      .join('\n');
+    const wanted =
+      !ctx.stubborn || (outcome && outcome.untouched)
+        ? ''
+        : Array.from(NX.sheet.elements.values())
+            .map((el) => el.textContent)
+            .join('\n')
+            .trim();
+
+    /*
+     * Resending an unchanged mirror is not free, so it is not sent.
+     *
+     * Replacing one is a removeCSS followed by an insertCSS, and for the
+     * moment between them the page has only its author-origin theme, which is
+     * the origin its own inline `!important` beats. That is affordable once
+     * per climb. rescan() calls this on every mutation batch a single page
+     * application produces, so sending only what actually changed is the
+     * difference between a rare flicker and a continuous one.
+     */
+    if (wanted === state.mirrorCss) return;
+    state.mirrorCss = wanted;
     NX.browser.send(
-      css.trim() ? { type: MSG.APPLY_USER_CSS, css } : { type: MSG.CLEAR_USER_CSS }
+      wanted ? { type: MSG.APPLY_USER_CSS, css: wanted } : { type: MSG.CLEAR_USER_CSS }
     );
-    state.mirrored = !!css.trim();
+    setMirrored(!!wanted);
   }
 
   /**
@@ -276,7 +324,8 @@
     state.ready = false;
     root().removeAttribute('data-nocturne-ready');
     await NX.browser.send({ type: MSG.CLEAR_USER_CSS });
-    state.mirrored = false;
+    state.mirrorCss = '';
+    setMirrored(false);
   }
 
   /**

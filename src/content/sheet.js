@@ -94,6 +94,28 @@
     }
   }
 
+  /**
+   * The one copy of our rules that `withoutOurs` cannot reach.
+   *
+   * The stubborn-sites mirror is inserted by the service worker at USER
+   * origin. This document does not own it, so there is no `media` attribute
+   * here to flip and no element here to remove: a content script has no way
+   * to take it out of the cascade for the duration of anything.
+   *
+   * Nothing here acts on that by itself. It is recorded so the readers can,
+   * because a read taken while the mirror is up is a read of Nocturne's own
+   * colours in an origin the reader cannot stand down.
+   */
+  let mirror = false;
+
+  function noteMirror(live) {
+    mirror = !!live;
+  }
+
+  function mirrorLive() {
+    return mirror;
+  }
+
   /** Re-append any sheet a page has ripped out of the head. */
   function reassert() {
     const parent = container();
@@ -152,6 +174,8 @@
     adopt,
     unadopt,
     withoutOurs,
+    noteMirror,
+    mirrorLive,
     elements,
   };
 })(typeof self !== 'undefined' ? self : globalThis);

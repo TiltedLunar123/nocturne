@@ -340,6 +340,10 @@
    * #14181d came out at #2f343a with the card at #2f3439, which is the same
    * colour to any eye. Every elevation cue on the page collapsed one second
    * after it loaded.
+   *
+   * The USER-origin mirror is a third, and it is the one with no cascade trick
+   * available: the worker inserted it, so `withoutOurs` has nothing to flip.
+   * That is handled in the loop below instead of here.
    */
   function readPhase(limit, nodes) {
     return NX.probe.withoutGuard(() =>
@@ -369,9 +373,31 @@
     const records = [];
     const count = Math.min(all.length, limit);
 
+    /*
+     * While the mirror is up, an element that already carries a tag is a
+     * surface painted by Nocturne in an origin nothing here can suspend.
+     *
+     * `withoutOurs` handles the author-origin copy of these rules by flipping
+     * `media` on it, which only works for sheets this document owns. The
+     * stubborn-sites mirror was inserted by the worker at USER origin, so
+     * reading a tagged element back would return the colour Nocturne gave it,
+     * map that a second time, and walk the surface up the ramp until a card
+     * and the page behind it are the same grey. Skipping is the only
+     * equivalent of standing it down that is available from here, and the set
+     * it covers is exact: `[data-nx]` is the only hook the mirror's compute
+     * rules have, so a tag is precisely what makes an element unreadable.
+     *
+     * The cost is that a tagged element which later changes colour on its own
+     * keeps the theming it was given, on stubborn sites only. New content is
+     * unaffected, which is the case that matters: it is untagged, so it is
+     * read against the page's own colours exactly as on the first climb.
+     */
+    const mirrored = NX.sheet.mirrorLive();
+
     for (let i = 0; i < count; i++) {
       const el = all[i];
       if (SKIP_TAGS.has(el.tagName) || NX.sheet.isOurs(el)) continue;
+      if (mirrored && el.hasAttribute('data-nx')) continue;
 
       const cs = getComputedStyle(el);
       const isSvg = typeof SVGElement !== 'undefined' && el instanceof SVGElement;

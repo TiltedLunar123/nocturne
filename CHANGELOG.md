@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- On sites using the stubborn sites option, content that appears after the page
+  has loaded is themed like the rest of it. Anything the page painted later,
+  which on most modern sites is most of the page, was left light while
+  everything around it was dark.
+
 ## 1.2.0
 
 More bug fixes, two of which meant whole categories of site were themed the

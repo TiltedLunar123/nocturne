@@ -266,6 +266,15 @@ and the wrong one looked fine until something measured it.
   sheet is live by then, and mapping an already-mapped colour walks it back up the
   inverted ramp until cards meet the page behind them. Media is flipped rather than the
   element removed, so the sheet is not rebuilt on every read.
+- **The one sheet that cannot be stood down is skipped instead.** Flipping media only
+  works for sheets this document owns, and the stubborn-sites mirror was inserted by
+  the worker at USER origin. So while it is up the read phase ignores anything already
+  carrying `data-nx`, which is exactly the set that mirror can paint: its compute rules
+  have no other hook. That leaves the rescan free to refresh the mirror, which it has
+  to, because content painted after the first climb otherwise has its colours in author
+  origin alone, and author origin is the one a page's inline `!important` beats. Doing
+  the refresh without the skip is the same wash-out in a new place; doing the skip
+  without the refresh leaves the holes.
 - **Session records go through one queue.** They are read-modify-write over a single
   key and `broadcast` pokes every tab at once, so the handlers interleaved and the last
   writer won. For the user-CSS map a lost record is unrecoverable: `removeCSS` needs the
@@ -306,3 +315,13 @@ and the wrong one looked fine until something measured it.
   page on some sites. The probe catches the shortfall and escalates.
 - **Browser chrome and restored tabs** can still flash. That is the browser's paint, not
   the page's, and no content script runs early enough to prevent it.
+- **On stubborn sites, an element that changes its own colours after being themed keeps
+  the theming it was given.** The read that would notice cannot see the USER-origin
+  mirror stood down, so re-reading it would map Nocturne's own colours a second time.
+  New content is unaffected, which is the case that dominates. Undoing this properly
+  needs the mirror suspendable from the page, and it is inserted by the worker.
+- **Refreshing the mirror is a removeCSS followed by an insertCSS**, so for that moment
+  the page has only its author-origin theme, which is the origin its inline `!important`
+  beats. Rare rather than continuous, because the mirror is only re-sent when its text
+  actually changed, but on a page that keeps producing colours it has never used before
+  it is a visible flicker.
