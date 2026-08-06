@@ -294,8 +294,20 @@
         })();
         return true;
 
+      /*
+       * The learned rung describes the tab, so only the tab may report it.
+       *
+       * It is keyed by origin and it sets the rung the NEXT visit starts on,
+       * skipping every cheaper rung below it. A subframe has its own document
+       * with none of the embedding page's stylesheets, so it settles on the
+       * compute rung and, left unguarded, teaches the worker that the site
+       * needs a generated theme. The site's own dark theme is then never
+       * tried again. A cross-origin embed does it to an origin the user never
+       * chose to visit that way. Same rule as TAB_STATE and the user-CSS
+       * upgrade, which have been guarded since the last sweep.
+       */
       case MSG.LEARNED:
-        remember(message.origin, message.tier);
+        if (speaksForTab) remember(message.origin, message.tier);
         return undefined;
 
       case MSG.TAB_STATE:

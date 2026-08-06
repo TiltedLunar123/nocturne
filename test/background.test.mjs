@@ -405,3 +405,33 @@ test('a tab that goes away stops being tracked', async () => {
     'a closed tab must not keep painting a toolbar icon from a stale record'
   );
 });
+
+test('an embedded frame cannot tell the worker what rung the tab settled on', async () => {
+  const { NX, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+
+  /*
+   * The script runs in every frame, and the learned rung is keyed by origin
+   * rather than by frame. A subframe with no theme of its own settles on the
+   * compute rung; if it is allowed to report that, the next visit to the
+   * embedding site starts at compute and never tries the site's own dark
+   * theme again. A cross-origin embed poisons a site the user never chose to
+   * visit that way.
+   */
+  await post(
+    listeners,
+    { type: MSG.LEARNED, origin: 'victim.example', tier: 3 },
+    { tab: { id: 4 }, frameId: 9 }
+  );
+  await settle();
+
+  const stored = await NX.browser.readSettings();
+  // Object.keys rather than the object itself: the worker runs in its own vm
+  // realm, so a deepStrictEqual against a literal compares prototypes and
+  // fails even when both sides are empty.
+  assert.deepEqual(
+    Object.keys(stored.learned),
+    [],
+    'only the top frame speaks for the tab, the same rule TAB_STATE already follows'
+  );
+});

@@ -310,8 +310,18 @@
     syncUserCss(ctx, { tier: TIER.FILTER });
   }
 
+  /**
+   * Report the rung this origin settled on, so the next visit can start there.
+   *
+   * Top frame only, like `announce` and `syncUserCss`. A subframe's document
+   * has none of the embedding page's stylesheets, so it falls to the compute
+   * rung on a site whose own dark theme works perfectly, and the rung is
+   * stored against the origin rather than the frame. The worker guards this
+   * too; both ends, because either one alone is a silent single point of
+   * failure for the product's headline claim.
+   */
   function remember(ctx, tier, reason) {
-    if (!state.origin) return;
+    if (!state.origin || !isTopFrame()) return;
     NX.browser.send({ type: MSG.LEARNED, origin: state.origin, tier, reason: reason || '' });
   }
 
