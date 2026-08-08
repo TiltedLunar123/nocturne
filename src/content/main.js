@@ -300,12 +300,34 @@
      * application produces, so sending only what actually changed is the
      * difference between a rare flicker and a continuous one.
      */
-    if (wanted === state.mirrorCss) return;
+    if (wanted === state.mirrorCss) return undefined;
+    // Recorded before the round trip so a burst of rescans does not send the
+    // same text repeatedly, and rolled back below if it did not take.
     state.mirrorCss = wanted;
-    NX.browser.send(
-      wanted ? { type: MSG.APPLY_USER_CSS, css: wanted } : { type: MSG.CLEAR_USER_CSS }
-    );
     setMirrored(!!wanted);
+    return NX.browser
+      .send(wanted ? { type: MSG.APPLY_USER_CSS, css: wanted } : { type: MSG.CLEAR_USER_CSS })
+      .then((reply) => {
+        if (reply && reply.ok) return;
+        /*
+         * The worker could not do it, so do not go on believing it did.
+         *
+         * `mirrored` is what tells the read phase it is looking at Nocturne's
+         * own colours in an origin it cannot suspend, and while it is set the
+         * phase skips every tagged element. Believing a mirror that is not
+         * there therefore froze every already-themed surface at its
+         * first-climb colours for the life of the document, which is the
+         * opposite of what the option is for. It happens whenever the grant
+         * is not really held: site access set to "on click", or withdrawn
+         * from the browser's own extensions page while `stubborn` is still
+         * stored as on.
+         *
+         * A failed withdrawal is the other way round: the sheet may well
+         * still be up, so the read phase has to keep assuming it is.
+         */
+        state.mirrorCss = null; // no longer a truthful record, so retry next time
+        setMirrored(!wanted);
+      });
   }
 
   /**

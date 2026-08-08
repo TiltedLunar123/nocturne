@@ -560,3 +560,50 @@ test('a removed sheet stops being mirrored', () => {
   NX.sheet.clearAll();
   assert.equal(NX.sheet.ours(), '');
 });
+
+// --- what a mutation batch actually covers ---------------------------------
+
+/** observe.js with a MutationObserver whose callback the test can fire. */
+function stubObserver() {
+  const holder = {};
+  const NX = loadLibs(['signals', 'content/observe'], {
+    MutationObserver: class {
+      constructor(fn) {
+        holder.fire = fn;
+      }
+      observe() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    },
+    document: { documentElement: {} },
+    Date,
+    setTimeout,
+  });
+  NX.sheet = { isOurs: () => false };
+  return { observe: NX.observe, fire: (records) => holder.fire(records) };
+}
+
+test('a subtree added in one go is queued whole, not truncated', () => {
+  /*
+   * A rendered table, a comment thread or an article body arrives as one
+   * subtree, and the cap here used to be 500. Measured on a page on the
+   * compute rung: of 800 rows appended in a single call, exactly 500 came out
+   * themed and the rest kept the site's own light colours, on a page that
+   * reported itself fully themed. Nothing went back for them either, because
+   * only mutated nodes are revisited and these had already been seen.
+   */
+  const kids = Array.from({ length: 800 }, (unused, i) => ({ nodeType: 1, id: i }));
+  const root = { nodeType: 1, id: 'root', querySelectorAll: () => kids };
+
+  const { observe, fire } = stubObserver();
+  observe.start(() => {}, () => {});
+  fire([{ type: 'childList', addedNodes: [root], target: root }]);
+
+  assert.equal(
+    observe.state.pending.size,
+    801,
+    `the whole subtree plus its root, got ${observe.state.pending.size}`
+  );
+});

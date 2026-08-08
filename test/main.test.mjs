@@ -113,9 +113,9 @@ const FAKES = `
  * A root element with just enough attribute behaviour for the engine, plus a
  * document and the two globals it reads at boot.
  */
-function loadEngine({ offers = ['compute'], settings = {}, sendDelay = 0 } = {}) {
+function loadEngine({ offers = ['compute'], settings = {}, sendDelay = 0, mirrorWorks = true } = {}) {
   const log = [];
-  const page = { dark: false, mirror: false, offers };
+  const page = { dark: false, mirror: false, mirrorWorks, offers };
   const sent = [];
   const attrs = new Map();
 
@@ -158,6 +158,11 @@ function loadEngine({ offers = ['compute'], settings = {}, sendDelay = 0 } = {})
       async sendMessage(message) {
         sent.push(message.type);
         for (let i = 0; i < sendDelay + 1; i++) await tick();
+        if (message.type === 'apply-user-css' && !page.mirrorWorks) {
+          // The worker answers honestly when it could not insert: the grant is
+          // not really held, or insertCSS rejected.
+          return { ok: false };
+        }
         if (message.type === 'learned' && message.origin) {
           const current = store.settings || {};
           store.settings = {
@@ -167,7 +172,7 @@ function loadEngine({ offers = ['compute'], settings = {}, sendDelay = 0 } = {})
         }
         if (message.type === 'apply-user-css') page.mirror = true;
         if (message.type === 'clear-user-css') page.mirror = false;
-        return null;
+        return { ok: true };
       },
     },
   };
@@ -417,4 +422,36 @@ test('the catch-up pass runs once per document, not once per settings change', a
     3,
     `no second catch-up: ${h.log.join(',')}`
   );
+});
+
+test('a mirror the worker could not put up is not treated as up', async () => {
+  /*
+   * `mirrored` is what tells the read phase it is looking at Nocturne's own
+   * colours in an origin it cannot suspend, so while it is set the phase skips
+   * every already-tagged element. Setting it without waiting to hear whether
+   * the insert actually happened froze every themed surface at its first-climb
+   * colours for the life of the document, which is the opposite of what the
+   * stubborn sites option is for.
+   *
+   * It is not a hypothetical state: the worker answers false whenever the
+   * all-sites grant is not really held, which is site access set to "on click"
+   * or withdrawn from the browser's own extensions page while the option is
+   * still stored as on.
+   */
+  const h = loadEngine({
+    offers: ['compute'],
+    settings: { stubborn: true },
+    mirrorWorks: false,
+  });
+  await h.settle();
+
+  assert.ok(h.sent.includes('apply-user-css'), h.sent.join(','));
+  assert.equal(h.page.mirror, false, 'the read phase must not skip tagged elements');
+});
+
+test('a mirror the worker did put up is treated as up', async () => {
+  const h = loadEngine({ offers: ['compute'], settings: { stubborn: true } });
+  await h.settle();
+  assert.ok(h.sent.includes('apply-user-css'), h.sent.join(','));
+  assert.equal(h.page.mirror, true);
 });

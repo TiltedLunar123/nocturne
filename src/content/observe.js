@@ -22,6 +22,7 @@
   const RETRY_LIMIT = 12; // per-node rewrites before we give up on it
   const CHURN_WINDOW = 4000; // ms
   const CHURN_LIMIT = 900; // mutations in that window before demotion
+  const SUBTREE_LIMIT = 20000; // matches the whole-document sweep in tiers.js
 
   const state = {
     observer: null,
@@ -92,10 +93,27 @@
         for (const node of record.addedNodes) {
           if (node.nodeType !== 1) continue;
           note(node);
-          // A subtree can arrive in one record; the ladder needs the whole of it.
+          /*
+           * A subtree can arrive in one record; the ladder needs the whole of
+           * it, not a prefix.
+           *
+           * The cap here used to be 500, which is smaller than a rendered
+           * table, a comment thread, or an article body, and every one of
+           * those is appended as a single subtree. Measured on a page that had
+           * settled on the compute rung: of 800 rows appended in one call,
+           * exactly 500 were themed and the remaining 300 kept the site's own
+           * light colours, on a page reporting itself fully themed. Nothing
+           * ever went back for them, because only mutated nodes are revisited
+           * and these had already been seen.
+           *
+           * The bound that matters is the one on the whole-document sweep, so
+           * it is the same number. Reading is about 29ms per 5000 elements and
+           * dedupes by colour signature, and a page that makes even that
+           * expensive is demoted by the churn backstop like any other cost.
+           */
           if (node.querySelectorAll) {
             const kids = node.querySelectorAll('*');
-            for (let i = 0; i < kids.length && i < 500; i++) note(kids[i]);
+            for (let i = 0; i < kids.length && i < SUBTREE_LIMIT; i++) note(kids[i]);
           }
         }
       } else {
