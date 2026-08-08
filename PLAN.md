@@ -46,6 +46,13 @@ Measured on Chromium 150 (Edge), 2026-07-31:
 | Same writes with a read after each | **55 ms for 800** elements | Layout thrash is ~20x worse per element. Read phase and write phase must stay separate. This is enforced in code, not by discipline. |
 | Injecting 250 rules | ~1 ms either as `insertRule` or one text blob | CSS injection is not a cost centre. |
 
+Measured on Edg/151.0.4129.72, 2026-08-08, against the shipped manifest:
+
+| Question | Answer | Consequence |
+| --- | --- | --- |
+| `permissions.remove({origins:['<all_urls>']})` | rejects: **"You cannot remove required permissions"** | A `content_scripts` match pattern is a REQUIRED scriptable host in Chromium, and ours is `<all_urls>`, the same pattern the optional grant names. So the optional grant cannot be handed back from inside the extension on Chromium either, and the call that tried was a rejection being swallowed. Gecko refuses differently: there the call succeeds and takes the content script's host access with it. `NX.browser.canDropHostAccess` is therefore false on both, and the options page says where the access can really be withdrawn. |
+| A custom property name from `Array.from(getComputedStyle(el))` | comes back with **escapes resolved** | `--a\}b\{c\}d` is enumerated as `--a}b{c}d`, so the page chooses that text. The token tier escapes it again with `CSS.escape` before emitting, or the page could close `:root{ ... }` early and write its own rules into a sheet that stubborn mode mirrors to USER origin. |
+
 Two further facts taken from documentation rather than measured here:
 
 - Forcing `@media (prefers-color-scheme: dark)` to evaluate true for arbitrary pages

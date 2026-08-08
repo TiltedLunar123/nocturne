@@ -116,17 +116,31 @@ test('turning stubborn sites off on Firefox does not hand back the all-sites gra
   );
 });
 
-test('turning stubborn sites off on Chrome does hand the grant back', async () => {
-  // Chromium keeps the content_scripts match list and the optional host grant
-  // as separate records, so giving the optional one back costs nothing.
+test('turning stubborn sites off on Chrome says where the grant can be taken back', async () => {
+  /*
+   * This test used to assert that the grant was handed back, and it only ever
+   * asserted that the call was made. Measured on Edg/151.0.4129.72 against the
+   * shipped manifest, that call rejects: "You cannot remove required
+   * permissions", because a content-script match pattern is a required
+   * scriptable host and this extension's is `<all_urls>`, the same pattern the
+   * optional grant names. The rejection went into a .catch that discarded it,
+   * so the option looked like it returned the access and never did.
+   *
+   * Nothing can hand it back from in here on either engine, so the honest
+   * thing is to turn the feature off and say where it can be.
+   */
   const { byId, calls } = loadOptions({ userAgent: CHROME_UA });
   await settle();
 
   await byId.get('stubborn').fire('change', { target: { checked: false } });
   await settle();
 
-  assert.deepEqual(calls.remove, [{ origins: ['<all_urls>'] }]);
+  assert.deepEqual(calls.remove, [], 'a call that always rejects is not worth making');
   assert.deepEqual(calls.patches, [{ stubborn: false }]);
+
+  const note = byId.get('stubborn-note');
+  assert.equal(note.hidden, false, 'the user has to be told the permission stays');
+  assert.match(note.textContent, /extensions page/);
 });
 
 test('turning stubborn sites on still asks for the grant on both engines', async () => {

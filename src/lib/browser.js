@@ -15,25 +15,31 @@
     typeof navigator !== 'undefined' && /\bGecko\/|Firefox\//.test(navigator.userAgent || '');
 
   /**
-   * May the optional all-sites grant be handed back?
+   * May the optional all-sites grant be handed back? On this manifest, no.
    *
-   * Chromium keeps two separate records: the match patterns a content script
-   * declares, and the optional host permissions the user has granted. Giving
-   * the optional one back leaves the content script exactly as it was.
+   * Both engines refuse, for different reasons, and both were measured rather
+   * than assumed.
    *
-   * Gecko does not. For an MV3 extension it treats the patterns in
-   * `content_scripts` as host permissions granted at install, and those are
-   * the same `<all_urls>` the optional grant names. Removing it there takes
-   * the content script's host access with it, so guard.css and the engine
-   * stop being injected everywhere: no anti-flash shell, no ladder, no
-   * per-site state, and the popup reporting that it cannot run on any page.
-   * Nothing in the extension's own UI would explain that or undo it.
+   * Gecko treats the patterns in `content_scripts` as host permissions granted
+   * at install, and those are the same `<all_urls>` the optional grant names.
+   * Removing it there SUCCEEDS and takes the content script's host access with
+   * it, so guard.css and the engine stop being injected anywhere: no
+   * anti-flash shell, no ladder, no per-site state, and a popup reporting that
+   * it cannot run on any page. Nothing in the extension's own UI would explain
+   * that or undo it.
    *
-   * So on Gecko the grant is not Nocturne's to drop, and it does not try.
-   * Turning the option off still turns the feature off, which is the whole of
-   * what that switch promises.
+   * Chromium refuses outright. Measured on Edg/151.0.4129.72 against the
+   * shipped manifest: `permissions.remove({origins:['<all_urls>']})` rejects
+   * with "You cannot remove required permissions", because a content-script
+   * match pattern is a required scriptable host. Calling it was therefore a
+   * rejection this code swallowed, every time, while the option's own copy
+   * implied the access had gone back.
+   *
+   * So the grant is not Nocturne's to drop on either engine, and it does not
+   * try. Turning the option off still turns the feature off, and the note
+   * beside it now says where the access itself can be taken back.
    */
-  const canDropHostAccess = !isFirefox;
+  const canDropHostAccess = false;
 
   /** Message names. Kept in one table so a typo is a missing key, not silence. */
   const MSG = {

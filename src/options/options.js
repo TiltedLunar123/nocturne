@@ -202,13 +202,24 @@
   async function toggleStubborn(wanted) {
     const note = el('stubborn-note');
     if (!wanted) {
-      // Not on Gecko, where the content script runs on this same grant and
-      // giving it back stops the extension working at all. See
-      // NX.browser.canDropHostAccess.
+      /*
+       * The feature goes off, but the grant is not ours to hand back on
+       * either engine: Gecko would take the content script's own host access
+       * with it, and Chromium rejects the call outright because a
+       * content-script match pattern is a required host. See
+       * NX.browser.canDropHostAccess for what was measured.
+       *
+       * Saying so is better than a silent no-op. The browser's own extensions
+       * page is where site access can actually be taken back.
+       */
       if (NX.browser.canDropHostAccess) {
         await api.permissions.remove({ origins: ['<all_urls>'] }).catch(() => {});
+        note.hidden = true;
+      } else {
+        note.hidden = false;
+        note.textContent =
+          'Off. Your browser keeps the all-sites permission until you remove it on its own extensions page, because Nocturne runs on that same permission.';
       }
-      note.hidden = true;
       await save({ stubborn: false });
       return;
     }
