@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.3.0
+
+A third bug sweep. Several of these meant a setting quietly stopped meaning
+what it says, and one let a page write into Nocturne's own stylesheet.
+
+- A page can no longer put rules of its own into the stylesheet Nocturne
+  builds for it. A site could name one of its colour variables in a way that
+  ended Nocturne's rule early and started its own, which mattered most with
+  "stubborn sites" turned on, since that copy is applied at a level the page
+  cannot normally reach.
+- Pinning a method on a site no longer teaches it to Automatic. Choosing
+  Invert once and then switching back to Automatic left that site inverted
+  from then on, with the site's own dark theme never tried again. Choosing
+  Generated did the same thing. Switching the mode back did not undo it.
+- Turning Nocturne off everywhere is no longer ignored on some sites. Using
+  the site shortcut to turn a site off and then on again left a setting behind
+  that outranked the main switch, so the page stayed themed while the popup
+  said it was off.
+- Changing two settings quickly no longer leaves a page describing the wrong
+  method, losing track of new content, or dropping the stubborn sites
+  stylesheet.
+- "Between set times" now actually switches over. The reminder that wakes
+  Nocturne on the hour was being reset more often than it could fire, so tabs
+  you already had open stayed on the wrong side of the boundary.
+- Content that appears after a page has loaded is themed. Anything added in
+  one go past the first few hundred elements was being left alone, as was
+  everything on pages that finish loading quickly, which is most of them.
+- A busy page that uses design tokens is no longer thrown away for inversion
+  just for being busy, and its stylesheet is put back if the page rebuilds
+  itself.
+- Turning "stubborn sites" off now says where the all-sites permission can be
+  taken back. It never handed it back, on either browser, and said nothing.
+
 ## 1.2.1
 
 - On sites using the stubborn sites option, content that appears after the page
