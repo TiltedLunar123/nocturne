@@ -363,13 +363,43 @@
     state.tier = outcome.tier;
     root().setAttribute('data-nocturne-tier', String(outcome.tier));
     remember(ctx, outcome.tier, 'native:lost');
-    if (outcome.tier === TIER.COMPUTE || outcome.tier === TIER.TOKENS) {
+    watch(ctx, outcome.tier);
+    syncUserCss(ctx, outcome);
+  }
+
+  /**
+   * Watch the page, in the way the rung that is actually in force needs.
+   *
+   * Only the compute rung does work per mutation, so only it needs the batch
+   * and only it has anything to back off from when a page will not settle.
+   * Pairing the token rung with the same callbacks looked harmless because
+   * rescan() returns immediately unless the compute rung is in force, but the
+   * churn half still fired: a design-token application with a lively DOM,
+   * which is most of them, lost a faithful theme to whole-page inversion, and
+   * the demotion was recorded against the origin so every later visit started
+   * there too.
+   *
+   * What that rung needs is the same thing the promoted-media rung needs. Both
+   * inject a stylesheet, and a page that rebuilds its head takes it away.
+   * Tier 1a injects nothing, so it is watched only when a sheet exists. The
+   * filter rung is deliberately left unwatched: it is where a page ends up
+   * after everything cheaper was too expensive, and an observer is exactly the
+   * cost it was demoted to avoid.
+   */
+  function watch(ctx, tier) {
+    if (tier === TIER.COMPUTE) {
       NX.observe.start(
         (batch) => rescan(ctx, batch),
         (count) => demote(ctx, `churn:${count}`)
       );
+      return;
     }
-    syncUserCss(ctx, outcome);
+    if ((tier === TIER.TOKENS || tier === TIER.NATIVE) && NX.sheet.elements.size > 0) {
+      NX.observe.start(
+        () => NX.observe.run(() => NX.sheet.reassert()),
+        () => {}
+      );
+    }
   }
 
   /** Drop to a cheaper rung and remember it for this origin. */
@@ -546,23 +576,7 @@
 
     syncUserCss(ctx, outcome);
 
-    if (outcome.tier === TIER.COMPUTE || outcome.tier === TIER.TOKENS) {
-      NX.observe.start(
-        (batch) => rescan(ctx, batch),
-        (count) => demote(ctx, `churn:${count}`)
-      );
-    } else if (outcome.tier === TIER.NATIVE && NX.sheet.elements.size > 0) {
-      /*
-       * Only the promoted-media path injects a sheet, and only that path needs
-       * watching in case the page rebuilds its head. Tier 1a injects nothing
-       * at all, so starting an observer there would run a callback on every
-       * mutation of the page for no work.
-       */
-      NX.observe.start(
-        () => NX.observe.run(() => NX.sheet.reassert()),
-        () => {}
-      );
-    }
+    watch(ctx, outcome.tier);
   }
 
   function listen() {

@@ -41,7 +41,7 @@ const FAKES = `
     remove(id) { NX.sheet.elements.delete(id); },
     clearAll() { NX.sheet.elements.clear(); },
     isOurs() { return false; },
-    reassert() {},
+    reassert() { log.push('sheet:reassert'); },
     withoutOurs(ids, fn) { return fn(); },
     noteMirror(live) { page.mirror = !!live; },
     mirrorLive() { return page.mirror; },
@@ -269,6 +269,43 @@ test('two settings changes in quick succession still leave the page on its real 
     'the rung the popup reads must describe the rung in force'
   );
   assert.ok(h.NX.observe.onDirty, 'the compute rung must still be watching for new content');
+});
+
+test('a busy page on the token rung is not thrown away for being busy', async () => {
+  /*
+   * The churn backstop is there to stop the compute rung re-sweeping a page
+   * that never settles. The token rung does no per-mutation work at all: it
+   * remaps custom properties on :root once, and anything the page adds
+   * afterwards inherits them. rescan() knows that and returns immediately, so
+   * on that rung the observer's only reachable effect was the demotion.
+   *
+   * A design-token application with a lively DOM, which is most of them,
+   * therefore lost a faithful theme and got whole-page inversion instead, and
+   * the demotion was written against the origin so every later visit started
+   * there too.
+   */
+  const h = loadEngine({ offers: ['tokens', 'compute'] });
+  await h.settle();
+  assert.equal(h.tier(), '2');
+
+  h.NX.observe.onChurn(1200);
+  await h.settle();
+
+  assert.equal(h.tier(), '2', 'a rung that does no work per mutation has nothing to back off from');
+  assert.ok(!h.log.includes('tier:filter'), h.log.join(','));
+});
+
+test('the token sheet is put back if the page rebuilds its head', async () => {
+  // Same reason the promoted-media rung is watched: this rung injects a sheet,
+  // and a page that rewrites its head takes it with it.
+  const h = loadEngine({ offers: ['tokens', 'compute'] });
+  await h.settle();
+  assert.equal(h.tier(), '2');
+
+  h.NX.observe.onDirty([]);
+  await h.settle();
+
+  assert.ok(h.log.includes('sheet:reassert'), h.log.join(','));
 });
 
 test('a learned rung is reported once, not on every re-apply', async () => {
