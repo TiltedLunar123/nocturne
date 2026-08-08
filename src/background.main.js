@@ -402,9 +402,24 @@
   async function syncAlarm() {
     const settings = await NX.browser.readSettings();
     if (settings.schedule.kind === 'clock') {
-      // periodInMinutes is a floor, not a guarantee; a minute either side of
-      // the boundary is not worth holding a worker alive for.
-      api.alarms.create(ALARM, { periodInMinutes: 1 });
+      /*
+       * Reconciling has to be idempotent, because it runs on every wake.
+       *
+       * `alarms.create` with a name that already exists replaces the alarm and
+       * restarts its countdown. This function runs whenever the worker starts,
+       * and MV3 evicts the worker after about half a minute idle while every
+       * page load sends it a message, so on an ordinary browsing session the
+       * one-minute period was being reset more often than once a minute and
+       * the alarm never fired. The symptom is that "between set times" does
+       * not flip the tabs already open at the boundary: only pages loaded
+       * after it come out right, because those evaluate the schedule for
+       * themselves.
+       *
+       * periodInMinutes is a floor, not a guarantee; a minute either side of
+       * the boundary is not worth holding a worker alive for.
+       */
+      const existing = await api.alarms.get(ALARM).catch(() => null);
+      if (!existing) api.alarms.create(ALARM, { periodInMinutes: 1 });
     } else {
       await api.alarms.clear(ALARM).catch(() => {});
     }

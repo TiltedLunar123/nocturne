@@ -28,7 +28,7 @@ const MODULES = [
  * would, rather than reaching into the module.
  */
 function makeApi() {
-  const calls = { insertCSS: [], removeCSS: [], setIcon: [], setTitle: [], sentToTab: [] };
+  const calls = { insertCSS: [], removeCSS: [], setIcon: [], setTitle: [], sentToTab: [], alarmCreate: [] };
   const listeners = {};
   const capture = (name) => ({
     addListener: (fn) => {
@@ -95,9 +95,25 @@ function makeApi() {
         calls.setTitle.push(details);
       },
     },
+    /*
+     * Alarms are modelled, not stubbed away. `create` with a name that already
+     * exists REPLACES the alarm and restarts its countdown, which is the whole
+     * of the bug this models: a one-minute period that is reset more often
+     * than once a minute never fires.
+     */
     alarms: {
-      create() {},
-      async clear() {},
+      _live: new Map(),
+      create(name, info) {
+        calls.alarmCreate.push({ name, info });
+        api.alarms._live.set(name, { name, periodInMinutes: info && info.periodInMinutes });
+      },
+      async get(name) {
+        await tick();
+        return api.alarms._live.get(name);
+      },
+      async clear(name) {
+        api.alarms._live.delete(name);
+      },
       onAlarm: capture('alarm'),
     },
     permissions: {
@@ -600,4 +616,61 @@ test('a genuinely new document drops the old record instead of removing from it'
     'nothing should be removed from a document that no longer exists'
   );
   assert.deepEqual(calls.insertCSS.map((c) => c.css), ['body{color:red}', 'body{color:blue}']);
+});
+
+test('the clock schedule keeps its alarm across worker restarts', async () => {
+  /*
+   * `alarms.create` with a name that already exists replaces the alarm and
+   * restarts its countdown. The worker reconciles the alarm on every wake,
+   * which it has to, because MV3 evicts it after about half a minute idle and
+   * every page load sends it a message. So on a busy session the one-minute
+   * period was reset more often than once a minute and the alarm never fired
+   * at all.
+   *
+   * The visible symptom is that "Between set times" does not flip the tabs the
+   * user already has open: only pages loaded after the boundary come out
+   * right, because those evaluate the schedule themselves.
+   */
+  const { NX, api, calls, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+  await settle();
+
+  await post(listeners, {
+    type: MSG.PATCH_SETTINGS,
+    patch: { schedule: { kind: 'clock', from: '20:00', to: '07:00' } },
+  });
+  await settle();
+  assert.equal(calls.alarmCreate.length, 1, 'selecting the schedule creates the alarm');
+
+  // The worker is evicted and woken again, repeatedly, as it is all day.
+  const onStartup = (listeners.startup || [])[0];
+  for (let wake = 0; wake < 3; wake++) {
+    await onStartup();
+    await settle();
+  }
+
+  assert.equal(
+    calls.alarmCreate.length,
+    1,
+    `a pending alarm must survive a wake, not be replaced by a fresh minute: ${calls.alarmCreate.length} creates`
+  );
+  assert.ok(await api.alarms.get('nocturne-schedule'), 'and it must still be scheduled');
+});
+
+test('leaving the clock schedule clears the alarm', async () => {
+  const { NX, api, calls, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+  await settle();
+
+  await post(listeners, {
+    type: MSG.PATCH_SETTINGS,
+    patch: { schedule: { kind: 'clock', from: '20:00', to: '07:00' } },
+  });
+  await settle();
+  assert.ok(await api.alarms.get('nocturne-schedule'));
+
+  await post(listeners, { type: MSG.PATCH_SETTINGS, patch: { schedule: { kind: 'always' } } });
+  await settle();
+  assert.equal(await api.alarms.get('nocturne-schedule'), undefined, 'nothing left waking the worker');
+  void calls;
 });
