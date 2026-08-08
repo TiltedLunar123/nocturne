@@ -210,6 +210,11 @@ function loadEngine({ offers = ['compute'], settings = {}, sendDelay = 0 } = {})
     sent,
     NX: sandbox.NX,
     tier: () => root.getAttribute('data-nocturne-tier'),
+    /** What the worker has stored, as the engine would read it back. */
+    stored: () => store.settings || {},
+    setSettings: (next) => {
+      store.settings = { ...(store.settings || {}), ...next };
+    },
     /** Deliver a message the way the browser does. */
     post: (message) => {
       for (const fn of messageListeners) fn(JSON.parse(JSON.stringify(message)), {}, () => {});
@@ -326,4 +331,42 @@ test('a learned rung is reported once, not on every re-apply', async () => {
     first,
     'the rung did not change, so there is nothing new to teach'
   );
+});
+
+test('pinning a method does not teach it to the automatic mode', async () => {
+  /*
+   * The learned rung is a cache of what measuring the page decided, and the
+   * whole promise of `auto` is that the rung it starts on is still measured
+   * there. A pinned mode is not a measurement: climb() returns the pinned rung
+   * without running anything. Reporting that anyway wrote it against the
+   * origin, and `auto` reads the value straight back as its starting rung.
+   *
+   * Pinning Invert once and putting the mode back therefore left the site
+   * inverted under the mode described as "measures the page and picks the best
+   * method", with the early return for a learned filter rung skipping every
+   * cheaper rung and any measurement that could have undone it. Nothing in the
+   * popup points at the Reset button that would clear it.
+   */
+  const site = { sites: { 'example.com': { mode: 'filter' } } };
+  const h = loadEngine({ offers: ['class', 'compute'], settings: site });
+  await h.settle();
+
+  assert.equal(h.tier(), '4', 'the pin itself must still be honoured');
+  assert.deepEqual(
+    Object.keys(h.stored().learned || {}),
+    [],
+    `a pin is not a measurement: ${JSON.stringify(h.stored().learned)}`
+  );
+
+  // Put the mode back. The site's own dark theme has to be found again.
+  h.setSettings({ sites: {} });
+  h.post({ type: 'state-changed' });
+  await h.settle();
+  assert.equal(h.tier(), '1', "automatic must find the site's own theme again");
+});
+
+test('a measured rung is still remembered', async () => {
+  const h = loadEngine({ offers: ['compute'] });
+  await h.settle();
+  assert.equal(h.stored().learned['example.com'].tier, 3, JSON.stringify(h.stored().learned));
 });

@@ -567,7 +567,25 @@
     // anyone writing their own userstyles on top. It is also what the end to
     // end suite asserts against.
     root().setAttribute('data-nocturne-tier', String(outcome.tier));
-    if (outcome.tier !== ctx.learnedTier) remember(ctx, outcome.tier, outcome.log.join(','));
+    /*
+     * Only a measurement is worth remembering.
+     *
+     * The learned rung caches what climbing and measuring decided, and `auto`
+     * reads it back as the rung to start on. A pinned mode is not a decision
+     * of that kind: climb() returns the pinned rung without running anything,
+     * so reporting it stored a preference as though it were a measurement.
+     * Pinning Invert once and putting the mode back left the site inverted
+     * under `auto` forever, since a learned filter rung takes the early return
+     * that skips every cheaper rung and the measurement that could undo it.
+     * Pinning Generated did the same to the site's own dark theme.
+     *
+     * The genuine demotions still report unconditionally: `dynamic` depends on
+     * a filter demotion carrying over, and that one is a measured cost rather
+     * than a preference.
+     */
+    if (ctx.mode === 'auto' && outcome.tier !== ctx.learnedTier) {
+      remember(ctx, outcome.tier, outcome.log.join(','));
+    }
 
     if (ctx.dimImages > 0) {
       const dim = 1 - ctx.dimImages / 100;
