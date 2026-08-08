@@ -444,7 +444,51 @@
     });
   }
 
-  async function apply() {
+  /**
+   * One climb at a time, and one more afterwards if anything asked while it ran.
+   *
+   * `applyNow` is several awaits long: it reads storage, and on a stubborn site
+   * it waits for the worker to confirm the user-origin mirror is off before
+   * anything is allowed to measure the page. `broadcast` pokes every open tab
+   * on every settings write, so a second run starts inside the first whenever
+   * two writes land close together. Two clicks in the popup does it, and so
+   * does one click while the clock schedule's alarm fires.
+   *
+   * Overlapped, the second climb reached the page the first had just themed,
+   * measured it as already dark, and reported that as the site's own dark
+   * theme: the popup described a generated theme as native, the rung was
+   * taught to the origin so the next visit started on the wrong one, and the
+   * observer the compute rung needs was replaced by the one the native rung
+   * uses, which left everything the page painted afterwards untouched.
+   *
+   * The trailing pass is what keeps this correct rather than merely safe. The
+   * settings change that arrived mid-climb is real and still has to be
+   * applied; it just has to happen after, not during. Any number of them
+   * collapse into that one pass, which is also what stops a burst of
+   * broadcasts from queueing a climb each.
+   */
+  let climbing = null;
+  let restart = false;
+
+  function apply() {
+    if (climbing) {
+      restart = true;
+      return climbing;
+    }
+    climbing = (async () => {
+      try {
+        do {
+          restart = false;
+          await applyNow();
+        } while (restart);
+      } finally {
+        climbing = null;
+      }
+    })();
+    return climbing;
+  }
+
+  async function applyNow() {
     const settings = await NX.browser.readSettings();
     const origin = NX.settings.originOf(location.href);
     state.origin = origin;
