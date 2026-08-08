@@ -87,6 +87,39 @@ const READ = `({
   fights: document.documentElement.getAttribute('data-fights')
 })`;
 
+/**
+ * Content the page paints after the ladder has already settled.
+ *
+ * The same inline `!important` the rest of the fixture uses, in colours nothing
+ * on the page has used yet, so the first climb cannot already have written a
+ * rule that covers it. Everything a modern application renders after hydration
+ * arrives exactly like this.
+ */
+const LATE = `(() => {
+  const el = document.createElement('div');
+  el.id = 'late';
+  el.setAttribute(
+    'style',
+    'background-color:#fdfdfd !important; color:#050505 !important; padding:16px; margin:12px 0'
+  );
+  el.textContent = 'Painted after the first climb, the way hydration does it.';
+  document.body.appendChild(el);
+  return 'added';
+})()`;
+
+const LATE_READ = `(() => {
+  const el = document.getElementById('late');
+  if (!el) return null;
+  const cs = getComputedStyle(el);
+  return { bg: cs.backgroundColor, fg: cs.color, tag: el.getAttribute('data-nx') };
+})()`;
+
+/** Nudge a panel the first climb already themed, without touching its colours. */
+const TOUCH = `(() => {
+  document.querySelector('div[style]').style.paddingTop = '17px';
+  return 'touched';
+})()`;
+
 async function themedPage(cdp, url, { expectTier = true } = {}) {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const sessionId = await cdp.attach(targetId);
@@ -472,6 +505,80 @@ async function main() {
         after.tier === before.tier,
         'stubborn re-apply: the page lands on the same rung it was already on',
         `tier ${before.tier} -> ${after.tier}`
+      );
+      await cdp.send('Target.closeTarget', { targetId });
+    }
+
+    /*
+     * Content painted after the first climb has to reach USER origin too.
+     *
+     * Stubborn mode exists because author origin loses to a page's inline
+     * `!important`, so a rule that only ever reaches author origin does nothing
+     * on precisely the sites this option is for. rescan() grows the compute
+     * sheet as the page changes, and the USER-origin mirror was a copy taken at
+     * the first climb, so everything painted after hydration was left out of
+     * it: themed only in the cascade origin the page outranks, and therefore
+     * still light while the rest of the page is dark.
+     *
+     * The last check is the other half, and it is why this was not simply a
+     * resync. The read that builds those rules cannot see the mirror stood
+     * down: sheet.withoutOurs flips `media` on the sheets this document owns,
+     * and the mirror is not one of them. Reading an element the mirror already
+     * paints maps Nocturne's own colours a second time and walks the surface up
+     * towards mid grey, so touching an element that is already themed has to
+     * leave it exactly where it was.
+     */
+    {
+      await setSettings(cdp, variant.id, { enabled: true, stubborn: true, mode: 'auto' });
+      const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+      const sessionId = await cdp.attach(targetId);
+      await cdp.send('Page.enable', {}, sessionId);
+      await cdp.send('Runtime.enable', {}, sessionId);
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: 'light' }],
+      }, sessionId);
+      await cdp.send('Page.navigate', { url }, sessionId);
+      await waitFor('themed', async () => {
+        const value = await cdp.evaluate(sessionId, READ);
+        return value.tier != null ? value : null;
+      }, { timeout: 15000, interval: 120 });
+      await new Promise((r) => setTimeout(r, 900));
+      const before = await cdp.evaluate(sessionId, READ);
+
+      record(
+        before.tier === '3' && before.body !== 'rgb(255, 255, 255)',
+        'late content: the fixture is on the compute rung with the mirror up',
+        `tier ${before.tier}, body ${before.body}`
+      );
+
+      await cdp.evaluate(sessionId, LATE);
+      const swept = await waitFor('late content swept', async () => {
+        const value = await cdp.evaluate(sessionId, LATE_READ);
+        return value && value.tag != null ? value : null;
+      }, { timeout: 8000, interval: 150 });
+      // The mirror is a round trip through the worker, like the first insert.
+      await new Promise((r) => setTimeout(r, 900));
+      const themed = await cdp.evaluate(sessionId, LATE_READ);
+
+      record(
+        themed.bg !== 'rgb(253, 253, 253)',
+        'late content: the mirror grows with the sheet, so inline !important still loses',
+        `${swept.bg} -> ${themed.bg}`
+      );
+      record(
+        themed.fg !== 'rgb(5, 5, 5)',
+        'late content: its inline text colour is beaten as well',
+        themed.fg
+      );
+
+      await cdp.evaluate(sessionId, TOUCH);
+      await new Promise((r) => setTimeout(r, 1500));
+      const after = await cdp.evaluate(sessionId, READ);
+
+      record(
+        after.panel === before.panel,
+        'late content: touching an already themed panel leaves its colour alone',
+        `${before.panel} -> ${after.panel}`
       );
       await cdp.send('Target.closeTarget', { targetId });
     }

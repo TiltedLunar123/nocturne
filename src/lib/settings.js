@@ -182,6 +182,18 @@
     const base = sanitise(settings);
     const site = (origin && base.sites[origin]) || {};
     const merged = { ...base, ...site };
+    /*
+     * A per-site switch can only ever subtract.
+     *
+     * Everything else in a site override is a preference and the spread above
+     * is the right rule for it. `enabled` is not: the global one is the main
+     * switch, described everywhere as on or off everywhere, so letting a
+     * stored per-site `true` win over a global `false` means the kill switch
+     * does not kill. Older versions could write exactly that value, so this
+     * also repairs a profile that already has one rather than only stopping
+     * new ones.
+     */
+    merged.enabled = base.enabled && site.enabled !== false;
     merged.active = activeNow(merged, context) && merged.mode !== 'off';
     merged.origin = origin || null;
     merged.learnedTier =

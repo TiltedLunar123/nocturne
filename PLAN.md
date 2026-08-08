@@ -46,6 +46,13 @@ Measured on Chromium 150 (Edge), 2026-07-31:
 | Same writes with a read after each | **55 ms for 800** elements | Layout thrash is ~20x worse per element. Read phase and write phase must stay separate. This is enforced in code, not by discipline. |
 | Injecting 250 rules | ~1 ms either as `insertRule` or one text blob | CSS injection is not a cost centre. |
 
+Measured on Edg/151.0.4129.72, 2026-08-08, against the shipped manifest:
+
+| Question | Answer | Consequence |
+| --- | --- | --- |
+| `permissions.remove({origins:['<all_urls>']})` | rejects: **"You cannot remove required permissions"** | A `content_scripts` match pattern is a REQUIRED scriptable host in Chromium, and ours is `<all_urls>`, the same pattern the optional grant names. So the optional grant cannot be handed back from inside the extension on Chromium either, and the call that tried was a rejection being swallowed. Gecko refuses differently: there the call succeeds and takes the content script's host access with it. `NX.browser.canDropHostAccess` is therefore false on both, and the options page says where the access can really be withdrawn. |
+| A custom property name from `Array.from(getComputedStyle(el))` | comes back with **escapes resolved** | `--a\}b\{c\}d` is enumerated as `--a}b{c}d`, so the page chooses that text. The token tier escapes it again with `CSS.escape` before emitting, or the page could close `:root{ ... }` early and write its own rules into a sheet that stubborn mode mirrors to USER origin. |
+
 Two further facts taken from documentation rather than measured here:
 
 - Forcing `@media (prefers-color-scheme: dark)` to evaluate true for arbitrary pages
@@ -266,6 +273,15 @@ and the wrong one looked fine until something measured it.
   sheet is live by then, and mapping an already-mapped colour walks it back up the
   inverted ramp until cards meet the page behind them. Media is flipped rather than the
   element removed, so the sheet is not rebuilt on every read.
+- **The one sheet that cannot be stood down is skipped instead.** Flipping media only
+  works for sheets this document owns, and the stubborn-sites mirror was inserted by
+  the worker at USER origin. So while it is up the read phase ignores anything already
+  carrying `data-nx`, which is exactly the set that mirror can paint: its compute rules
+  have no other hook. That leaves the rescan free to refresh the mirror, which it has
+  to, because content painted after the first climb otherwise has its colours in author
+  origin alone, and author origin is the one a page's inline `!important` beats. Doing
+  the refresh without the skip is the same wash-out in a new place; doing the skip
+  without the refresh leaves the holes.
 - **Session records go through one queue.** They are read-modify-write over a single
   key and `broadcast` pokes every tab at once, so the handlers interleaved and the last
   writer won. For the user-CSS map a lost record is unrecoverable: `removeCSS` needs the
@@ -306,3 +322,13 @@ and the wrong one looked fine until something measured it.
   page on some sites. The probe catches the shortfall and escalates.
 - **Browser chrome and restored tabs** can still flash. That is the browser's paint, not
   the page's, and no content script runs early enough to prevent it.
+- **On stubborn sites, an element that changes its own colours after being themed keeps
+  the theming it was given.** The read that would notice cannot see the USER-origin
+  mirror stood down, so re-reading it would map Nocturne's own colours a second time.
+  New content is unaffected, which is the case that dominates. Undoing this properly
+  needs the mirror suspendable from the page, and it is inserted by the worker.
+- **Refreshing the mirror is a removeCSS followed by an insertCSS**, so for that moment
+  the page has only its author-origin theme, which is the origin its inline `!important`
+  beats. Rare rather than continuous, because the mirror is only re-sent when its text
+  actually changed, but on a page that keeps producing colours it has never used before
+  it is a visible flicker.

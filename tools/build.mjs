@@ -423,6 +423,27 @@ async function gateVersions(base) {
   if (changelog && !changelog.includes(base.version)) {
     fail(`CHANGELOG.md has no entry for v${base.version}`);
   }
+
+  /*
+   * The AMO reviewer notes name the source archive by filename, and a reviewer
+   * follows that name literally: it is step one of the build they run to
+   * reproduce the package. Left at the previous release it points at an
+   * archive that is not in the upload, which is the kind of thing that costs a
+   * review round trip rather than being caught by anyone reading the diff.
+   */
+  const listing = await fs
+    .readFile(path.join(ROOT, 'store', 'listing-firefox.md'), 'utf8')
+    .catch(() => '');
+  if (listing) {
+    const wanted = `nocturne-source-v${base.version}.zip`;
+    const stale = listing.match(/nocturne-source-v[\d.]+\.zip/g) || [];
+    for (const name of new Set(stale)) {
+      if (name !== wanted) {
+        fail(`store/listing-firefox.md tells the reviewer to unzip ${name}, but the build produces ${wanted}`);
+      }
+    }
+    if (!stale.length) fail('store/listing-firefox.md no longer names the source archive to upload');
+  }
 }
 
 /** Node parses the bundle, so a syntax error fails the build not the browser. */

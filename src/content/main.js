@@ -29,13 +29,30 @@
     started: false,
     ready: false,
     announced: false,
+    caughtUp: false,
     mirrored: false,
+    // The exact text last handed to the worker, so an unchanged mirror is not
+    // torn down and rebuilt. null until the first sync, which is not the same
+    // as the empty string: that one means "cleared, and the worker knows".
+    mirrorCss: null,
   };
 
   const root = () => document.documentElement;
 
   const now = () =>
     typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+
+  /**
+   * The mirror's liveness is not only ours to know.
+   *
+   * Anything that reads the page back has to know a copy of our own rules is
+   * up at an origin it cannot suspend, and the readers live in sheet.js and
+   * tiers.js. Recorded in both places from here, so there is one writer.
+   */
+  function setMirrored(live) {
+    state.mirrored = live;
+    NX.sheet.noteMirror(live);
+  }
 
   function markReady() {
     if (state.ready) return;
@@ -68,8 +85,11 @@
      * Nocturne reports itself switched off. Only the top frame ever asked for
      * it, so only the top frame withdraws it.
      */
-    if (isTopFrame()) NX.browser.send({ type: MSG.CLEAR_USER_CSS });
-    state.mirrored = false;
+    if (isTopFrame()) {
+      NX.browser.send({ type: MSG.CLEAR_USER_CSS });
+      state.mirrorCss = '';
+    }
+    setMirrored(false);
     state.tier = TIER.OFF;
     state.ready = false;
   }
@@ -217,6 +237,23 @@
       if (batch && batch.length) NX.tiers.computeOn(batch, ctx);
       else NX.tiers.tryCompute(ctx);
     });
+    /*
+     * The compute sheet just grew, so the mirror is a sweep behind.
+     *
+     * It has to be caught up here for the same reason it is caught up after a
+     * demotion: the mirror is not an extra, it is the only origin that beats a
+     * page's own inline `!important`, and stubborn mode is only ever on for
+     * pages that use one. Left at whatever the first climb wrote, every node
+     * added since had its colours in author origin alone, which on those pages
+     * is the origin that loses. The result was a themed page with light holes
+     * in it wherever anything had been painted after load, which on a modern
+     * application is most of it.
+     *
+     * Inside the budget on purpose: building the text walks every sheet, and a
+     * page that makes that expensive should be demoted for it like any other
+     * cost this function incurs.
+     */
+    syncUserCss(ctx);
     const cost = now() - started;
     if (cost > RESCAN_BUDGET_MS * 4) demote(ctx, `rescan:${Math.round(cost)}ms`);
   }
@@ -242,18 +279,55 @@
      * it. Stubborn mode never reached subframes anyway, so nothing is lost.
      */
     if (!isTopFrame()) return;
-    if (!ctx.stubborn || (outcome && outcome.untouched)) {
-      NX.browser.send({ type: MSG.CLEAR_USER_CSS });
-      state.mirrored = false;
-      return;
-    }
-    const css = Array.from(NX.sheet.elements.values())
-      .map((el) => el.textContent)
-      .join('\n');
-    NX.browser.send(
-      css.trim() ? { type: MSG.APPLY_USER_CSS, css } : { type: MSG.CLEAR_USER_CSS }
-    );
-    state.mirrored = !!css.trim();
+    /*
+     * Taken from what the sheet was asked to contain, not from the elements.
+     *
+     * Those elements sit in the page's own DOM and the page can rewrite one.
+     * Author origin is its own document to override, but this text is inserted
+     * at USER origin, which outranks everything the page can write for itself
+     * and is not subject to the page's own content security policy, so reading
+     * it back off the element handed the page reach it does not otherwise have.
+     */
+    const wanted = !ctx.stubborn || (outcome && outcome.untouched) ? '' : NX.sheet.ours();
+
+    /*
+     * Resending an unchanged mirror is not free, so it is not sent.
+     *
+     * Replacing one is a removeCSS followed by an insertCSS, and for the
+     * moment between them the page has only its author-origin theme, which is
+     * the origin its own inline `!important` beats. That is affordable once
+     * per climb. rescan() calls this on every mutation batch a single page
+     * application produces, so sending only what actually changed is the
+     * difference between a rare flicker and a continuous one.
+     */
+    if (wanted === state.mirrorCss) return undefined;
+    // Recorded before the round trip so a burst of rescans does not send the
+    // same text repeatedly, and rolled back below if it did not take.
+    state.mirrorCss = wanted;
+    setMirrored(!!wanted);
+    return NX.browser
+      .send(wanted ? { type: MSG.APPLY_USER_CSS, css: wanted } : { type: MSG.CLEAR_USER_CSS })
+      .then((reply) => {
+        if (reply && reply.ok) return;
+        /*
+         * The worker could not do it, so do not go on believing it did.
+         *
+         * `mirrored` is what tells the read phase it is looking at Nocturne's
+         * own colours in an origin it cannot suspend, and while it is set the
+         * phase skips every tagged element. Believing a mirror that is not
+         * there therefore froze every already-themed surface at its
+         * first-climb colours for the life of the document, which is the
+         * opposite of what the option is for. It happens whenever the grant
+         * is not really held: site access set to "on click", or withdrawn
+         * from the browser's own extensions page while `stubborn` is still
+         * stored as on.
+         *
+         * A failed withdrawal is the other way round: the sheet may well
+         * still be up, so the read phase has to keep assuming it is.
+         */
+        state.mirrorCss = null; // no longer a truthful record, so retry next time
+        setMirrored(!wanted);
+      });
   }
 
   /**
@@ -276,7 +350,8 @@
     state.ready = false;
     root().removeAttribute('data-nocturne-ready');
     await NX.browser.send({ type: MSG.CLEAR_USER_CSS });
-    state.mirrored = false;
+    state.mirrorCss = '';
+    setMirrored(false);
   }
 
   /**
@@ -314,13 +389,43 @@
     state.tier = outcome.tier;
     root().setAttribute('data-nocturne-tier', String(outcome.tier));
     remember(ctx, outcome.tier, 'native:lost');
-    if (outcome.tier === TIER.COMPUTE || outcome.tier === TIER.TOKENS) {
+    watch(ctx, outcome.tier);
+    syncUserCss(ctx, outcome);
+  }
+
+  /**
+   * Watch the page, in the way the rung that is actually in force needs.
+   *
+   * Only the compute rung does work per mutation, so only it needs the batch
+   * and only it has anything to back off from when a page will not settle.
+   * Pairing the token rung with the same callbacks looked harmless because
+   * rescan() returns immediately unless the compute rung is in force, but the
+   * churn half still fired: a design-token application with a lively DOM,
+   * which is most of them, lost a faithful theme to whole-page inversion, and
+   * the demotion was recorded against the origin so every later visit started
+   * there too.
+   *
+   * What that rung needs is the same thing the promoted-media rung needs. Both
+   * inject a stylesheet, and a page that rebuilds its head takes it away.
+   * Tier 1a injects nothing, so it is watched only when a sheet exists. The
+   * filter rung is deliberately left unwatched: it is where a page ends up
+   * after everything cheaper was too expensive, and an observer is exactly the
+   * cost it was demoted to avoid.
+   */
+  function watch(ctx, tier) {
+    if (tier === TIER.COMPUTE) {
       NX.observe.start(
         (batch) => rescan(ctx, batch),
         (count) => demote(ctx, `churn:${count}`)
       );
+      return;
     }
-    syncUserCss(ctx, outcome);
+    if ((tier === TIER.TOKENS || tier === TIER.NATIVE) && NX.sheet.elements.size > 0) {
+      NX.observe.start(
+        () => NX.observe.run(() => NX.sheet.reassert()),
+        () => {}
+      );
+    }
   }
 
   /** Drop to a cheaper rung and remember it for this origin. */
@@ -395,7 +500,51 @@
     });
   }
 
-  async function apply() {
+  /**
+   * One climb at a time, and one more afterwards if anything asked while it ran.
+   *
+   * `applyNow` is several awaits long: it reads storage, and on a stubborn site
+   * it waits for the worker to confirm the user-origin mirror is off before
+   * anything is allowed to measure the page. `broadcast` pokes every open tab
+   * on every settings write, so a second run starts inside the first whenever
+   * two writes land close together. Two clicks in the popup does it, and so
+   * does one click while the clock schedule's alarm fires.
+   *
+   * Overlapped, the second climb reached the page the first had just themed,
+   * measured it as already dark, and reported that as the site's own dark
+   * theme: the popup described a generated theme as native, the rung was
+   * taught to the origin so the next visit started on the wrong one, and the
+   * observer the compute rung needs was replaced by the one the native rung
+   * uses, which left everything the page painted afterwards untouched.
+   *
+   * The trailing pass is what keeps this correct rather than merely safe. The
+   * settings change that arrived mid-climb is real and still has to be
+   * applied; it just has to happen after, not during. Any number of them
+   * collapse into that one pass, which is also what stops a burst of
+   * broadcasts from queueing a climb each.
+   */
+  let climbing = null;
+  let restart = false;
+
+  function apply() {
+    if (climbing) {
+      restart = true;
+      return climbing;
+    }
+    climbing = (async () => {
+      try {
+        do {
+          restart = false;
+          await applyNow();
+        } while (restart);
+      } finally {
+        climbing = null;
+      }
+    })();
+    return climbing;
+  }
+
+  async function applyNow() {
     const settings = await NX.browser.readSettings();
     const origin = NX.settings.originOf(location.href);
     state.origin = origin;
@@ -441,7 +590,25 @@
     // anyone writing their own userstyles on top. It is also what the end to
     // end suite asserts against.
     root().setAttribute('data-nocturne-tier', String(outcome.tier));
-    if (outcome.tier !== ctx.learnedTier) remember(ctx, outcome.tier, outcome.log.join(','));
+    /*
+     * Only a measurement is worth remembering.
+     *
+     * The learned rung caches what climbing and measuring decided, and `auto`
+     * reads it back as the rung to start on. A pinned mode is not a decision
+     * of that kind: climb() returns the pinned rung without running anything,
+     * so reporting it stored a preference as though it were a measurement.
+     * Pinning Invert once and putting the mode back left the site inverted
+     * under `auto` forever, since a learned filter rung takes the early return
+     * that skips every cheaper rung and the measurement that could undo it.
+     * Pinning Generated did the same to the site's own dark theme.
+     *
+     * The genuine demotions still report unconditionally: `dynamic` depends on
+     * a filter demotion carrying over, and that one is a measured cost rather
+     * than a preference.
+     */
+    if (ctx.mode === 'auto' && outcome.tier !== ctx.learnedTier) {
+      remember(ctx, outcome.tier, outcome.log.join(','));
+    }
 
     if (ctx.dimImages > 0) {
       const dim = 1 - ctx.dimImages / 100;
@@ -453,23 +620,37 @@
 
     syncUserCss(ctx, outcome);
 
-    if (outcome.tier === TIER.COMPUTE || outcome.tier === TIER.TOKENS) {
-      NX.observe.start(
-        (batch) => rescan(ctx, batch),
-        (count) => demote(ctx, `churn:${count}`)
-      );
-    } else if (outcome.tier === TIER.NATIVE && NX.sheet.elements.size > 0) {
-      /*
-       * Only the promoted-media path injects a sheet, and only that path needs
-       * watching in case the page rebuilds its head. Tier 1a injects nothing
-       * at all, so starting an observer there would run a callback on every
-       * mutation of the page for no work.
-       */
-      NX.observe.start(
-        () => NX.observe.run(() => NX.sheet.reassert()),
-        () => {}
-      );
-    }
+    watch(ctx, outcome.tier);
+    scheduleCatchUp(ctx, outcome.tier);
+  }
+
+  /**
+   * One full sweep after the page has finished loading, because hydration can
+   * repaint anything.
+   *
+   * Scheduled from here rather than from a `load` listener registered at boot.
+   * That listener checked the rung when it fired, and apply() is several
+   * awaits long, so on any page whose subresources finish promptly, which is
+   * essentially every real page and in particular an application shell that
+   * reaches DOMContentLoaded and load back to back, `load` arrived while the
+   * climb was still in flight, the rung was still null, and the pass this
+   * whole mechanism exists for never ran. The end to end fixture serves a
+   * subresource that deliberately takes four seconds, so it only ever
+   * exercised the case where the check happens to pass.
+   *
+   * Only the compute rung has anything to redo. Once per document: a settings
+   * change re-climbs the whole page already, and a repeat here would just be
+   * a second full sweep for nothing.
+   */
+  function scheduleCatchUp(ctx, tier) {
+    if (tier !== TIER.COMPUTE || state.caughtUp) return;
+    state.caughtUp = true;
+    const later = () =>
+      setTimeout(() => {
+        if (state.tier === TIER.COMPUTE) rescan(state.settings || ctx, null);
+      }, 250);
+    if (document.readyState === 'complete') later();
+    else window.addEventListener('load', later, { once: true });
   }
 
   function listen() {
@@ -524,17 +705,6 @@
       apply();
     }
 
-    // A late pass catches sites that paint their real UI after hydration.
-    window.addEventListener(
-      'load',
-      () => {
-        if (state.tier === TIER.COMPUTE || state.tier === TIER.TOKENS) {
-          // A full sweep here on purpose: hydration can repaint anything.
-          setTimeout(() => state.settings && rescan(state.settings, null), 250);
-        }
-      },
-      { once: true }
-    );
   }
 
   NX.main = { boot, apply, state, TIER, climb };

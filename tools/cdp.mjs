@@ -282,14 +282,49 @@ export async function launch(extensionDir, { headless = true, port, window = '14
   return { child, profile };
 }
 
+/**
+ * Kill the browser, and mean the whole browser.
+ *
+ * A Chromium launch is a process tree: one parent plus a renderer, a GPU
+ * process, utilities and a crashpad handler. `child.kill()` signals the parent
+ * only, and on Windows there is no process group for the rest to be reaped
+ * with, so every run left dozens of orphans behind. They hold their temp
+ * profile open, so the cleanup below silently failed too, and they keep
+ * competing for the machine: three suites in a row is enough to bury it, and
+ * the next launch then sits there doing nothing while the twelfth copy of the
+ * previous one holds the debugging port. Diagnosing that once was expensive
+ * enough to be worth two lines here.
+ */
+function killTree(child) {
+  if (!child || child.exitCode !== null) return;
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+      return;
+    } catch {
+      /* fall through to the plain signal */
+    }
+  }
+  child.kill();
+}
+
 export async function shutdown(session) {
   try {
-    session?.child.kill();
+    killTree(session?.child);
   } catch {
     /* already exited */
   }
   await sleep(400);
   if (session?.profile) {
-    await fs.rm(session.profile, { recursive: true, force: true }).catch(() => {});
+    // The tree takes a moment to go, and the profile cannot be removed until
+    // it has. Retrying beats leaving a directory per run in the temp folder.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await fs.rm(session.profile, { recursive: true, force: true });
+        return;
+      } catch {
+        await sleep(300);
+      }
+    }
   }
 }

@@ -16,6 +16,19 @@
   const MARK = 'data-nocturne';
 
   const elements = new Map();
+  /**
+   * What each sheet was ASKED to contain, which is not the same question as
+   * what its element contains right now.
+   *
+   * The injected elements sit in the page's own DOM, so the page can rewrite
+   * one. For the author-origin copy that is merely the page overriding itself,
+   * which it could do anyway. For the stubborn-sites mirror it is not: that
+   * text is handed to the worker and inserted at USER origin, which outranks
+   * everything the page can write for itself and is not subject to the page's
+   * own content security policy. Reading it back off the element let the page
+   * choose it. This map is what gets mirrored instead.
+   */
+  const texts = new Map();
   const adopted = new WeakMap();
 
   function container() {
@@ -25,6 +38,7 @@
   /** Create or update a sheet. Idempotent, and cheap when the text is unchanged. */
   function set(id, cssText) {
     let el = elements.get(id);
+    texts.set(id, cssText);
     if (el && el.isConnected && el.textContent === cssText) return el;
 
     if (!el || !el.isConnected) {
@@ -47,13 +61,26 @@
     const el = elements.get(id);
     if (el && el.parentNode) el.parentNode.removeChild(el);
     elements.delete(id);
+    texts.delete(id);
   }
 
   function clearAll() {
     for (const id of Array.from(elements.keys())) remove(id);
+    texts.clear();
     for (const el of document.querySelectorAll(`style[${MARK}]`)) {
       if (el.parentNode) el.parentNode.removeChild(el);
     }
+  }
+
+  /**
+   * Every rule Nocturne currently has live, as Nocturne wrote it.
+   *
+   * This is what the stubborn-sites mirror is built from. Insertion order is
+   * the order the rules were set in, which is the order they sit in the head,
+   * so equal-specificity ties resolve the same way at either origin.
+   */
+  function ours() {
+    return Array.from(texts.values()).join('\n').trim();
   }
 
   /** Is this node one of ours? Used by the observer to ignore self-inflicted churn. */
@@ -92,6 +119,28 @@
     } finally {
       for (const el of suspended) el.media = 'screen';
     }
+  }
+
+  /**
+   * The one copy of our rules that `withoutOurs` cannot reach.
+   *
+   * The stubborn-sites mirror is inserted by the service worker at USER
+   * origin. This document does not own it, so there is no `media` attribute
+   * here to flip and no element here to remove: a content script has no way
+   * to take it out of the cascade for the duration of anything.
+   *
+   * Nothing here acts on that by itself. It is recorded so the readers can,
+   * because a read taken while the mirror is up is a read of Nocturne's own
+   * colours in an origin the reader cannot stand down.
+   */
+  let mirror = false;
+
+  function noteMirror(live) {
+    mirror = !!live;
+  }
+
+  function mirrorLive() {
+    return mirror;
   }
 
   /** Re-append any sheet a page has ripped out of the head. */
@@ -152,6 +201,9 @@
     adopt,
     unadopt,
     withoutOurs,
+    noteMirror,
+    mirrorLive,
+    ours,
     elements,
   };
 })(typeof self !== 'undefined' ? self : globalThis);
