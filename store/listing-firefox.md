@@ -105,10 +105,15 @@ rather than as a wall of text.
 
 ## Notes to reviewer
 
-Paste into the notes field. AMO caps this at 3000 characters and counts CRLF line endings, so a plain character count understates it by one per line. This is 2997 as the form counts it.
-add-on**: the build concatenates source files, which counts as a preprocessing
-step under Mozilla's source code submission policy. Upload
-`release/nocturne-source-v1.0.0.zip` alongside the package.
+Paste the block below into the notes field. AMO caps it at 3000 characters and
+counts CRLF line endings, so a plain character count understates it by one per
+line. This is 2997 as the form counts it.
+
+**Source code upload is mandatory for this add-on**: the build concatenates
+source files, which counts as a preprocessing step under Mozilla's source code
+submission policy. Upload `release/nocturne-source-v1.2.1.zip` alongside the
+package. The release gate checks that this filename matches the version being
+shipped, so a stale one fails the build rather than reaching a reviewer.
 
 ```
 SOURCE AND BUILD
@@ -122,7 +127,7 @@ install step. build.mjs uses only the Node standard library, so your default
 Ubuntu 24.04 / Node 24 environment needs nothing added.
 
 Step by step:
-  1. unzip nocturne-source-v1.0.0.zip
+  1. unzip nocturne-source-v1.2.1.zip
   2. cd nocturne
   3. node tools/build.mjs
 
