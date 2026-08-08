@@ -29,6 +29,7 @@
     started: false,
     ready: false,
     announced: false,
+    caughtUp: false,
     mirrored: false,
     // The exact text last handed to the worker, so an unchanged mirror is not
     // torn down and rebuilt. null until the first sync, which is not the same
@@ -598,6 +599,36 @@
     syncUserCss(ctx, outcome);
 
     watch(ctx, outcome.tier);
+    scheduleCatchUp(ctx, outcome.tier);
+  }
+
+  /**
+   * One full sweep after the page has finished loading, because hydration can
+   * repaint anything.
+   *
+   * Scheduled from here rather than from a `load` listener registered at boot.
+   * That listener checked the rung when it fired, and apply() is several
+   * awaits long, so on any page whose subresources finish promptly, which is
+   * essentially every real page and in particular an application shell that
+   * reaches DOMContentLoaded and load back to back, `load` arrived while the
+   * climb was still in flight, the rung was still null, and the pass this
+   * whole mechanism exists for never ran. The end to end fixture serves a
+   * subresource that deliberately takes four seconds, so it only ever
+   * exercised the case where the check happens to pass.
+   *
+   * Only the compute rung has anything to redo. Once per document: a settings
+   * change re-climbs the whole page already, and a repeat here would just be
+   * a second full sweep for nothing.
+   */
+  function scheduleCatchUp(ctx, tier) {
+    if (tier !== TIER.COMPUTE || state.caughtUp) return;
+    state.caughtUp = true;
+    const later = () =>
+      setTimeout(() => {
+        if (state.tier === TIER.COMPUTE) rescan(state.settings || ctx, null);
+      }, 250);
+    if (document.readyState === 'complete') later();
+    else window.addEventListener('load', later, { once: true });
   }
 
   function listen() {
@@ -652,17 +683,6 @@
       apply();
     }
 
-    // A late pass catches sites that paint their real UI after hydration.
-    window.addEventListener(
-      'load',
-      () => {
-        if (state.tier === TIER.COMPUTE || state.tier === TIER.TOKENS) {
-          // A full sweep here on purpose: hydration can repaint anything.
-          setTimeout(() => state.settings && rescan(state.settings, null), 250);
-        }
-      },
-      { once: true }
-    );
   }
 
   NX.main = { boot, apply, state, TIER, climb };

@@ -223,6 +223,8 @@ function loadEngine({ offers = ['compute'], settings = {}, sendDelay = 0 } = {})
     settle: async () => {
       for (let i = 0; i < 40; i++) await new Promise((resolve) => setTimeout(resolve, 0));
     },
+    /** Real time, for the deferred catch-up pass. */
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }
 
@@ -369,4 +371,50 @@ test('a measured rung is still remembered', async () => {
   const h = loadEngine({ offers: ['compute'] });
   await h.settle();
   assert.equal(h.stored().learned['example.com'].tier, 3, JSON.stringify(h.stored().learned));
+});
+
+test('the catch-up pass after load actually runs on a page that loads quickly', async () => {
+  /*
+   * The late full sweep exists because hydration can repaint anything, and it
+   * was scheduled from a `load` listener registered at document_start that
+   * checked `state.tier` when it fired. apply() is several awaits long, so on
+   * any page whose subresources finish promptly, which is essentially every
+   * real page and in particular an application shell that reaches
+   * DOMContentLoaded and load back to back, `load` arrived while the climb was
+   * still in flight, `state.tier` was still null, and the pass was never
+   * scheduled at all.
+   *
+   * The end to end fixture serves a subresource that deliberately takes four
+   * seconds, so it only ever exercised the slow case where the check happens
+   * to pass.
+   */
+  const h = loadEngine({ offers: ['compute'] });
+  await h.settle();
+  await h.wait(400);
+
+  // The first climb, then the catch-up sweep. Counted after the window rather
+  // than across it, so a slow tick cannot decide the answer.
+  assert.equal(
+    h.log.filter((l) => l === 'tier:compute').length,
+    2,
+    `one climb plus one catch-up: ${h.log.join(',')}`
+  );
+});
+
+test('the catch-up pass runs once per document, not once per settings change', async () => {
+  const h = loadEngine({ offers: ['compute'] });
+  await h.settle();
+  await h.wait(400);
+
+  h.post({ type: 'state-changed' });
+  await h.settle();
+  await h.wait(400);
+
+  // Climb, catch-up, re-climb. A settings change re-sweeps the whole page by
+  // itself, so a second catch-up would be a full sweep for nothing.
+  assert.equal(
+    h.log.filter((l) => l === 'tier:compute').length,
+    3,
+    `no second catch-up: ${h.log.join(',')}`
+  );
 });
