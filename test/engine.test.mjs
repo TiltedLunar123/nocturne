@@ -394,3 +394,87 @@ test('a page with no dark convention matches nothing', () => {
   // Nor should a light-theme selector.
   assert.deepEqual(Array.from(signals.detect('[data-theme="light"] {}')), []);
 });
+
+// --- the page's own text never becomes our CSS -----------------------------
+
+/**
+ * A root element whose custom properties are named by the page.
+ *
+ * `Array.from(getComputedStyle(el))` is how the token tier finds them, and it
+ * hands the name back with its escapes already resolved: `--a\}b` is declared
+ * escaped and enumerated as `--a}b`. So the page, not Nocturne, decides what
+ * that text is.
+ */
+function stubRoot(names, { value = '#123456', escape = null } = {}) {
+  const computed = Object.assign([...names], {
+    getPropertyValue: () => value,
+  });
+  const globals = {
+    document: { documentElement: {}, styleSheets: [], querySelectorAll: () => [] },
+    getComputedStyle: () => computed,
+    SVGElement: class {},
+  };
+  // Both paths matter and they differ: with CSS.escape the name is put back
+  // the way the page wrote it, without it the name is dropped instead.
+  if (escape) globals.CSS = { escape };
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/tiers'], globals);
+  const written = [];
+  NX.sheet = { set: (id, css) => written.push(css), remove: () => {} };
+  NX.probe = { measure: () => ({ ok: true }), withoutGuard: (fn) => fn() };
+  return { tiers: NX.tiers, written };
+}
+
+/**
+ * A `}` that ends the block, as CSS parses it rather than as a substring
+ * search sees it. An escaped one is a literal inside an identifier.
+ */
+function closesEarly(css) {
+  for (let i = 0; i < css.length - 1; i++) {
+    if (css[i] === '\\') {
+      i++;
+      continue;
+    }
+    if (css[i] === '}') return true;
+  }
+  return false;
+}
+
+test('a page cannot choose the text that goes into the token stylesheet', () => {
+  /*
+   * A custom property name is an identifier, and an identifier may contain
+   * anything at all as long as it is escaped. Splicing the enumerated name
+   * straight into `:root{ ... }` therefore let a page close that block early
+   * and write rules of its own into a stylesheet Nocturne owns. Under the
+   * stubborn-sites option that sheet is mirrored to USER origin, which
+   * outranks every rule the page can write for itself and is not subject to
+   * the page's own content security policy, so the page gains reach it does
+   * not otherwise have over its own document.
+   */
+  const hostile = '--pwn}html,body{background:#000}h1{color:#00ff00}q';
+  const names = ['--card-bg', '--page-bg', hostile, '--border'];
+  // Escaping every character that is not an ident character is what a real
+  // CSS.escape does to a name like this one.
+  const escape = (s) => s.replace(/[^A-Za-z0-9_-]/g, (c) => `\\${c}`);
+
+  for (const [label, page] of [
+    ['dropped where CSS.escape is unavailable', stubRoot(names)],
+    ['escaped where it is', stubRoot(names, { escape })],
+  ]) {
+    page.tiers.tryTokens({ palette: 'nocturne', minContrast: 4.5 });
+    assert.equal(page.written.length, 1, label);
+    const css = page.written[0];
+    assert.ok(css.startsWith(':root{'), `${label}: ${css}`);
+    assert.ok(!closesEarly(css), `${label}: the block is closed early: ${css}`);
+    assert.ok(!/[^\\]\{color/.test(css), `${label}: page rules reached our sheet: ${css}`);
+  }
+});
+
+test('ordinary custom property names still make it through', () => {
+  const wanted = ['--card-bg', '--page-bg', '--text-muted', '--brand-500'];
+  const page = stubRoot(wanted);
+  page.tiers.tryTokens({ palette: 'nocturne', minContrast: 4.5 });
+  const css = page.written[0];
+  for (const name of wanted) {
+    assert.ok(css.includes(`${name}:`), `${name} should still be remapped: ${css}`);
+  }
+});

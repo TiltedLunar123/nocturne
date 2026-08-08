@@ -249,6 +249,33 @@
     return color.toOklch(rgb)[0] > 0.5 ? 'bg' : 'fg';
   }
 
+  /**
+   * A property name is the page's text, not ours.
+   *
+   * A custom property may be named anything at all as long as it is escaped,
+   * and `Array.from(getComputedStyle(el))` hands the name back with those
+   * escapes already resolved: a page declaring `--a\}b\{c\}d` is enumerated as
+   * `--a}b{c}d`. Splicing that straight into `:root{ ... }` let the page close
+   * the block early and write rules of its own into a stylesheet Nocturne
+   * owns, which under the stubborn-sites option is mirrored to USER origin,
+   * outranks everything the page can write for itself, and is not subject to
+   * the page's own content security policy.
+   *
+   * `CSS.escape` puts the escapes back, so the declaration means exactly the
+   * property the page declared and nothing else. Where it is unavailable, a
+   * plain name is still safe to emit and anything else is dropped rather than
+   * guessed at.
+   */
+  const PLAIN_IDENT = /^--[A-Za-z0-9_-]+$/;
+
+  function safePropertyName(property) {
+    if (PLAIN_IDENT.test(property)) return property;
+    if (typeof CSS !== 'undefined' && CSS && typeof CSS.escape === 'function') {
+      return CSS.escape(property);
+    }
+    return null;
+  }
+
   function tryTokens(ctx) {
     const root = document.documentElement;
     const computed = getComputedStyle(root);
@@ -256,13 +283,15 @@
 
     for (const property of Array.from(computed)) {
       if (!property.startsWith('--')) continue;
+      const name = safePropertyName(property);
+      if (!name) continue;
       const value = computed.getPropertyValue(property).trim();
       if (!value || value.length > 64) continue;
       const parsed = color.parse(value);
       if (!parsed || parsed.a < 0.05) continue;
       const role = roleForToken(property, parsed.rgb);
       const mapped = theme.map(parsed.rgb, role, ctx);
-      declarations.push(`${property}:${color.format(mapped, parsed.a)}`);
+      declarations.push(`${name}:${color.format(mapped, parsed.a)}`);
     }
 
     if (declarations.length < 3) return null;
@@ -596,6 +625,7 @@ img[src*=".svg"],svg{filter:none !important;}
     applyFilter,
     clearFilter,
     // exported for tests
+    safePropertyName,
     stripColorScheme,
     splitQueryList,
     promoteDarkMedia,
