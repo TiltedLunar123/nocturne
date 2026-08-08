@@ -278,13 +278,16 @@
      * it. Stubborn mode never reached subframes anyway, so nothing is lost.
      */
     if (!isTopFrame()) return;
-    const wanted =
-      !ctx.stubborn || (outcome && outcome.untouched)
-        ? ''
-        : Array.from(NX.sheet.elements.values())
-            .map((el) => el.textContent)
-            .join('\n')
-            .trim();
+    /*
+     * Taken from what the sheet was asked to contain, not from the elements.
+     *
+     * Those elements sit in the page's own DOM and the page can rewrite one.
+     * Author origin is its own document to override, but this text is inserted
+     * at USER origin, which outranks everything the page can write for itself
+     * and is not subject to the page's own content security policy, so reading
+     * it back off the element handed the page reach it does not otherwise have.
+     */
+    const wanted = !ctx.stubborn || (outcome && outcome.untouched) ? '' : NX.sheet.ours();
 
     /*
      * Resending an unchanged mirror is not free, so it is not sent.

