@@ -251,6 +251,36 @@ test('the site shortcut toggles the origin the page reported, not one parsed fro
   assert.equal(stored.sites['news.example'].enabled, false);
 });
 
+test('the site shortcut clears its override rather than storing an "on"', async () => {
+  /*
+   * Pressing it twice used to write `{enabled: true}` rather than removing the
+   * override, and a per-site value wins over the global one in resolve(). The
+   * main switch was then silently ignored on that site: the page went on being
+   * themed and the toolbar showed it as on, while the popup, which reads the
+   * global flag first, said "Off for this site". The popup's own site switch
+   * has always cleared the key instead, so the two disagreed about what
+   * turning a site back on means.
+   */
+  const { NX, api, listeners } = loadWorker();
+  const { MSG } = NX.browser;
+  api.tabs._tabs = [{ id: 11, active: true }];
+  api.tabs._reply = (tabId, message) =>
+    message.type === MSG.GET_STATE ? { origin: 'news.example', tier: 3, ready: true } : null;
+
+  const onCommand = (listeners.command || [])[0];
+  await onCommand('toggle-site');
+  await settle();
+  await onCommand('toggle-site');
+  await settle();
+
+  const stored = await NX.browser.readSettings();
+  assert.deepEqual(Object.keys(stored.sites), [], `off then on must leave nothing behind: ${JSON.stringify(stored.sites)}`);
+
+  // And the global switch has to win over whatever a site says.
+  const resolved = NX.settings.resolve({ ...stored, enabled: false, sites: { 'news.example': { enabled: true } } }, 'news.example', {});
+  assert.equal(resolved.active, false, 'turning Nocturne off everywhere must mean everywhere');
+});
+
 test('two tabs applying user CSS at once do not lose each other record', async () => {
   const { NX, api, calls, listeners } = loadWorker();
   const { MSG } = NX.browser;

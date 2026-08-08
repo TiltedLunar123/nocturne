@@ -433,10 +433,23 @@
       if (command === 'toggle-site' && tab) {
         const origin = await originForTab(tab.id);
         if (!origin) return;
-        // Read the current value inside the queue, so the flip is against
-        // what is stored now rather than a snapshot taken before it.
+        /*
+         * Turning a site back on removes the override; it does not store an
+         * "on".
+         *
+         * Read the current value inside the queue, so the flip is against what
+         * is stored now rather than a snapshot taken before it. Writing `true`
+         * here left a per-site value that outranked the global switch in
+         * resolve(), so after one off-then-on the main switch was silently
+         * ignored on that site: the page went on being themed and the toolbar
+         * agreed, while the popup, which reads the global flag first, said the
+         * site was off. NX.settings.CLEAR is what the popup's own site switch
+         * has always sent for this.
+         */
         await updateSettings((settings) =>
-          withSite(settings, origin, { enabled: (settings.sites[origin] || {}).enabled === false })
+          withSite(settings, origin, {
+            enabled: (settings.sites[origin] || {}).enabled === false ? NX.settings.CLEAR : false,
+          })
         );
         await broadcast();
       }
