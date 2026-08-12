@@ -13,17 +13,80 @@ Nocturne is an escalation ladder. It tries the cheapest thing that could work,
 **measures whether the page actually came out dark and readable**, and only escalates
 when the measurement says it has to.
 
-```
-0  shell      dark before first paint, from CSS with no script behind it
-1  native     switch on the site's own dark theme, or promote its dark media rules
-2  tokens     remap the site's own design tokens
-3  compute    sample the rendered colours and rewrite them, deduplicated
-4  filter     invert, when nothing better is possible
-```
+![Five rungs, cheapest first: 0 shell, dark before first paint from CSS with no script behind it. 1 native, switch on the site's own dark theme or promote its dark media rules. 2 tokens, remap the site's own design tokens. 3 compute, sample the rendered colours and rewrite them, deduplicated. 4 filter, invert when nothing better is possible.](docs/ladder.png)
 
 On a site with its own dark mode the ladder stops at rung 1 having done almost no
 work, and what you get is that site's theme, authored by the people who designed the
 site. On a site without one, it generates a theme, and checks its own result.
+
+## What it looks like
+
+Every pair below is a real capture of the same fixture page with the extension off
+and on, produced by `node tools/shots.mjs`. The fixtures are in `test/fixtures` and
+each one isolates a single rung.
+
+**Rung 1, a site with its own dark theme behind `html.dark`.** Nocturne switches the
+site's own class on. The result is the designer's theme, not an approximation of it.
+
+<table>
+<tr><th width="50%">Off</th><th width="50%">On</th></tr>
+<tr valign="top">
+<td><img src="docs/shots/native-class-before.png" alt="A white page headed Class-based dark theme, with dark text and two light grey cards."></td>
+<td><img src="docs/shots/native-class-after.png" alt="The same page in the site's own dark theme, near black with light text and two slightly lighter cards."></td>
+</tr>
+</table>
+
+**Rung 2, a site built on design tokens.** The tokens are remapped, so the page keeps
+its own spacing, borders and accent colours.
+
+<table>
+<tr><th width="50%">Off</th><th width="50%">On</th></tr>
+<tr valign="top">
+<td><img src="docs/shots/tokens-before.png" alt="A white page headed Design tokens, with a surface card containing muted text and a blue link."></td>
+<td><img src="docs/shots/tokens-after.png" alt="The same page dark, with the muted text still muted against the new background and the link still blue."></td>
+</tr>
+</table>
+
+**Rung 3, a legacy page with no dark theme and no tokens.** Colours are sampled from
+the rendered page and rewritten. The yellow warning note is the interesting part:
+naive HSL inversion turns it blue, and doing the work in OKLCh leaves it yellow.
+
+<table>
+<tr><th width="50%">Off</th><th width="50%">On</th></tr>
+<tr valign="top">
+<td><img src="docs/shots/legacy-before.png" alt="A serif page of raw hex codes with a grey box, a pale yellow warning note and a bordered table."></td>
+<td><img src="docs/shots/legacy-after.png" alt="The same page dark. The warning note is a deep yellow rather than the blue that naive inversion would produce, and the table keeps its borders."></td>
+</tr>
+</table>
+
+**Six thousand elements.** The colour work is deduplicated, so a heavy page costs
+about what a light one does, and the six tag colours stay distinguishable from each
+other rather than collapsing into one hue.
+
+<table>
+<tr><th width="50%">Off</th><th width="50%">On</th></tr>
+<tr valign="top">
+<td><img src="docs/shots/heavy-before.png" alt="A light page of six thousand striped rows, each tagged in one of six pastel colours."></td>
+<td><img src="docs/shots/heavy-after.png" alt="The same six thousand rows dark, with all six tag colours still separable from one another."></td>
+</tr>
+</table>
+
+**A page that is already dark is left alone.** Rung 0 measures it, finds nothing to
+do, and stops.
+
+<table>
+<tr><th width="50%">Off</th><th width="50%">On</th></tr>
+<tr valign="top">
+<td><img src="docs/shots/already-dark-before.png" alt="A page that ships its own dark theme, already near black with light text."></td>
+<td><img src="docs/shots/already-dark-after.png" alt="The same page with the extension on, pixel for pixel unchanged."></td>
+</tr>
+</table>
+
+The popup reports which method was used on the page you are looking at, and lets you
+pin a different one.
+
+<img src="docs/shots/ui-popup.png" alt="The Nocturne popup: a master switch, a per-page switch, five themes, brightness, contrast and colour sliders, and a how-this-site-is-themed row offering Automatic, Site theme only, Generated and Invert, with a note that it measures the page and picks the best method." width="320">
+
 
 ## What is actually different
 
@@ -131,8 +194,8 @@ These are real and stated rather than hidden.
 - **Canvas and WebGL applications** draw pixels, not CSS. Rung 4 can invert the whole
   surface, which is usually worse than leaving it. Use the application's own dark
   theme.
-- **Cross-origin stylesheets** cannot be read: `cssRules` throws for them. Rungs 1b
-  and 2 therefore see less than the whole page on some sites. The measurement notices
+- **Cross-origin stylesheets** cannot be read: `cssRules` throws for them. That means
+  rungs 1b and 2 see less than the whole page on some sites. The measurement notices
   and escalates. Working around this is why other extensions in this category fetch
   stylesheets over the network, which Nocturne will not do.
 - **Rung 3 forces text and background colours**, so a page's own hover tint on those
